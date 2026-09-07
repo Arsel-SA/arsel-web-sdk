@@ -4,13 +4,13 @@
   "description": "Arsel web SDK — events, identity and web push.",
   "license": "MIT",
   "author": "Arsel (https://arsel.sa)",
-  "homepage": "https://github.com/BasicsEngage/arsel-web-sdk#readme",
+  "homepage": "https://github.com/Arsel-SA/arsel-web-sdk#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/BasicsEngage/arsel-web-sdk.git"
+    "url": "git+https://github.com/Arsel-SA/arsel-web-sdk.git"
   },
   "bugs": {
-    "url": "https://github.com/BasicsEngage/arsel-web-sdk/issues"
+    "url": "https://github.com/Arsel-SA/arsel-web-sdk/issues"
   },
   "keywords": [
     "arsel",
