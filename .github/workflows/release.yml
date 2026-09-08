@@ -65,7 +65,10 @@ jobs:
       # trusted publisher is registered for this package.
       - name: npm debug log
         if: failure()
-        run: tail -80 /home/runner/.npm/_logs/*-debug-0.log
+        # -n, not -80: the glob matches more than one log and the short form is
+        # rejected outright ("option used in invalid context"), so the step that
+        # exists to explain a failure failed instead of explaining it.
+        run: tail -n 80 /home/runner/.npm/_logs/*-debug-0.log
 
       - name: Create the GitHub release
         run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md
