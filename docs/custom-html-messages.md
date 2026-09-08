@@ -2,7 +2,7 @@
 
 The `CUSTOM_HTML` layout renders markup written in the Arsel dashboard instead of a headline, body and buttons. It is the same contract on **web, iOS and Android**: one snippet, three platforms, no per-platform branches.
 
-Requires SDK **1.5.0** on every platform. Older builds never receive a `CUSTOM_HTML` message — the server withholds it rather than sending something the device would drop.
+Requires SDK **1.3.0** on every platform. Older builds never receive a `CUSTOM_HTML` message — the server withholds it rather than sending something the device would drop.
 
 ---
 
@@ -46,12 +46,26 @@ On web your creative is an iframe, so `parent` is the host page. On iOS and Andr
 | Message | Effect |
 |---|---|
 | `{ type: 'arsel:dismiss' }` | Closes the message and reports a dismissal. |
-| `{ type: 'arsel:track', event: 'wheel_spun' }` | Records an event, exactly as `Arsel.track()` would. Subject to the same opt-out. |
+| `{ type: 'arsel:track', event: 'wheel_spun', properties: { prize: 'free_shipping' } }` | Records an event, exactly as `Arsel.track()` would. Subject to the same opt-out. `properties` is optional — see below. |
 | `{ type: 'arsel:button', buttonId: 'cta' }` | Runs a button **you defined on the campaign** — records the click and follows its destination. |
 | `{ type: 'arsel:submit', submission: { email: 'a@b.c' } }` | Reports answers. Keys are yours; values must be strings. |
 | `{ type: 'arsel:resize', height: 420 }` | Sets the message's height in CSS pixels, clamped to 90% of the viewport. |
 
 Anything else is ignored.
+
+#### Properties on a tracked event
+
+`properties` is optional, and holds up to 20 keys. A key is capped at 64 characters, a string
+value at 500. Values must be a string, a finite number or a boolean — anything else (an object,
+an array, `null`, `NaN`) is dropped and the event still records with the properties that were
+valid.
+
+Nested values are not serialised on purpose: the API types properties as primitives, so quietly
+JSON-encoding an object would put a string where every segment reading that property expects a
+number. Losing the whole event because one value was malformed would hide the interaction
+entirely, which is why a bad property is dropped rather than refused — unlike `arsel:submit`,
+where a malformed payload is refused outright, because a half-read set of answers is worse
+than none.
 
 ### What the bridge will not do
 
@@ -83,7 +97,7 @@ The frame proposes; the host disposes. This is deliberate, and it is what makes 
   parent.postMessage({ type: 'arsel:resize', height: document.body.scrollHeight }, '*');
 
   document.getElementById('claim').onclick = function () {
-    parent.postMessage({ type: 'arsel:track', event: 'reward_claimed' }, '*');
+    parent.postMessage({ type: 'arsel:track', event: 'reward_claimed', properties: { tier: 'gold' } }, '*');
     parent.postMessage({ type: 'arsel:dismiss' }, '*');
   };
 </script>

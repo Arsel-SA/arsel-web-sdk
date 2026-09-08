@@ -159,9 +159,16 @@ The queue drains oldest-first, in batches of up to **50 events per request**, an
 | no response (offline, DNS, TLS) | retryable |
 | any other `4xx` | permanent — dropped |
 
-There is no exponential backoff timer in the page. A drain is triggered by `track()`, by `init()`,
-by `flushNow()`, by the browser coming back **online**, and by the tab becoming **visible** again.
-In practice anything stranded goes out the moment connectivity or attention returns.
+A drain is triggered by `track()`, by `init()`, by `flushNow()`, by the browser coming back
+**online**, and by the tab becoming **visible** again. In practice anything stranded goes out the
+moment connectivity or attention returns.
+
+After a retryable failure the drain backs off before trying again: 5s, doubling, capped at 5
+minutes, plus up to 50% jitter. A `Retry-After` from the server raises that wait but never lowers
+it, and is jittered too — every device throttled inside the same window is told the same number, and
+returning in lockstep would just reproduce the burst. Triggers that arrive during the wait are
+ignored rather than sending, so a page that calls `track()` in a loop no longer hammers a backend
+that is pushing back. One delivered batch clears the gate.
 
 ### Forcing a flush
 

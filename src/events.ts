@@ -8,6 +8,7 @@ import {
   removeEvent,
 } from './store';
 import type { PendingEvent } from './store';
+import { backoffMs } from './retry';
 import { RESULT, post } from './transport';
 import type { EventProperties } from './types';
 
@@ -133,6 +134,48 @@ export async function enqueue(
 
 let inFlight: Promise<void> | null = null;
 
+// Retry pacing. Before this the page had none at all: a drain that failed just
+// returned, and the next track() re-fired it immediately — so a rate-limited
+// or down backend was hammered at whatever rate the host app called track().
+let attempt = 0;
+let retryNotBeforeMs = 0;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Clears the pacing gate. Called by `init()`, which an SPA may run again with a
+ * different key, and by tests that need a known starting state.
+ */
+export function resetRetryPacing(): void {
+  attempt = 0;
+  retryNotBeforeMs = 0;
+  if (retryTimer !== null) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+}
+
+function noteDelivered(): void {
+  attempt = 0;
+  retryNotBeforeMs = 0;
+}
+
+/**
+ * The queue is durable, so a timer lost to a closed tab strands nothing — the
+ * next `online`, visibilitychange or track() picks the queue up, and finds the
+ * gate already expired.
+ */
+function scheduleRetry(retryAfterMs: number | null): void {
+  attempt += 1;
+  const waitMs = backoffMs(attempt, retryAfterMs);
+  retryNotBeforeMs = Date.now() + waitMs;
+
+  if (retryTimer !== null) clearTimeout(retryTimer);
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    void flush().catch(() => {});
+  }, waitMs);
+}
+
 /**
  * Deliver everything queued, oldest first.
  *
@@ -179,6 +222,10 @@ function reportPermanentDrop(
 }
 
 async function drain(): Promise<void> {
+  // Every trigger routes through here, so one gate covers track(), `online`,
+  // visibilitychange and the retry timer alike.
+  if (Date.now() < retryNotBeforeMs) return;
+
   const [clientKey, baseUrl] = await Promise.all([
     get<string>(KEYS.clientKey),
     get<string>(KEYS.baseUrl),
@@ -209,10 +256,16 @@ async function drain(): Promise<void> {
       // later batch overtaking an earlier one would reorder a user's history.
       // The whole batch retries under the same key, so a request that landed
       // but timed out on the way back dedupes instead of double-counting.
-      if (response.result === RESULT.retryable) return;
+      if (response.result === RESULT.retryable) {
+        scheduleRetry(response.retryAfterMs);
+        return;
+      }
       // Success or permanent: either way it is settled. A 4xx will never
       // succeed on a retry, and holding it would wedge everything behind it.
-      if (response.result !== RESULT.success) {
+      if (response.result === RESULT.success) {
+        // A batch landed, so the backend is taking traffic again.
+        noteDelivered();
+      } else {
         reportPermanentDrop(items, response.code, response.body);
       }
       for (const event of batch) {

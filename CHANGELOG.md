@@ -7,7 +7,23 @@ Breaking changes to the public surface wait for a major release, and are listed 
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-09-08
+
 ### Added
+
+- **Two in-app layouts: `HALF_INTERSTITIAL` and `ALERT`.** The first anchors the panel to
+  the lower half so the app stays partly visible; the second is the compact, centred,
+  text-only alert shape. Both behave as dialogs — backdrop, `role="dialog"`, focus trap —
+  and `ALERT` never renders an image even when the campaign carries one.
+
+- **Form and rating messages.** The `FORM` and `RATING` layouts render inputs — text,
+  email, tel, dropdown, radio, checkbox and a star/NPS rating — and report the answers
+  on a new `submitted` beacon. A required field that is empty blocks submission and
+  focuses itself rather than sending a partial answer.
+
+  Answers are keyed by `fieldId`. The bundle deliberately does not carry the destination
+  property, so the SDK cannot name where an answer lands; the API resolves each id
+  against the campaign it stored.
 
 - **Custom HTML messages.** The `CUSTOM_HTML` layout renders markup written in the dashboard
   instead of a headline, body and buttons. It draws into an iframe with `sandbox="allow-scripts"`
@@ -26,10 +42,29 @@ Breaking changes to the public surface wait for a major release, and are listed 
   clamped to 90% of the viewport.
 
   The same three lines work on web, iOS and Android — the mobile SDKs inject a shim that
-  forwards exactly these posts. See `docs/custom-html-messages.md`. The API withholds the
-  layout from any web build below 1.5.0.
+  forwards exactly these posts. See `docs/custom-html-messages.md`.
+
+- **`arsel:track` from a custom-HTML creative carries properties.** `{ type: 'arsel:track',
+  event: 'wheel_spun', properties: { prize: 'free_shipping' } }` records the event with those
+  properties, through the same `track()` the host page uses. Keys and values are bounded, and
+  a value that is not a string, finite number or boolean is dropped rather than serialised —
+  the API types properties as primitives, and JSON-encoding an object would put a string where
+  every segment reading it expects a number. A malformed property never costs you the event.
+
+  Every layout above is withheld by the API from any web build below 1.3.0, so an older SDK is
+  never offered a layout it cannot draw and nothing has to be released in lockstep.
 
 ### Fixed
+
+- **The events drain now backs off.** It had no backoff at all: a failed drain simply returned, and
+  the next `track()` re-fired it immediately, so a rate-limited or unavailable backend was retried at
+  whatever rate the host app called `track()`. Retries are now paced by an exponential curve (5s,
+  doubling, capped at 5 minutes) with up to 50% jitter, and the page honours `Retry-After` as a
+  floor. A delivered batch clears the gate.
+
+- **`Retry-After` is read.** `transport` parses it (delta-seconds or HTTP-date) and the drain uses it
+  as a lower bound on the wait — jittered on top, because every device throttled inside one window
+  receives the same value and would otherwise return in lockstep.
 
 - **`InAppLayout` had drifted from what the SDK actually renders.** The exported type still
   listed the original three layouts while four more were renderable at runtime, so every
@@ -37,24 +72,14 @@ Breaking changes to the public surface wait for a major release, and are listed 
   and was silently dead code. The type is now derived from the runtime allowlist, which makes
   the two impossible to separate again.
 
-- **Form and rating messages.** The `FORM` and `RATING` layouts render inputs — text,
-  email, tel, dropdown, radio, checkbox and a star/NPS rating — and report the answers
-  on a new `submitted` beacon. A required field that is empty blocks submission and
-  focuses itself rather than sending a partial answer.
+- **In-app button destinations can no longer carry an executing scheme.** A button whose
+  `value` was `javascript:`, `data:`, `vbscript:`, `file:` or `blob:` was assigned straight to
+  an `<a href>` and, for `DEEP_LINK`, handed to `location.assign` — either of which executes it
+  in the host page's origin. Both sinks now parse the destination and refuse those schemes; a
+  `URL` button with an unusable destination renders as a plain button rather than a link. The
+  API validates the same set on write, so this is the second line for bundles authored earlier.
 
-  Answers are keyed by `fieldId`. The bundle deliberately does not carry the destination
-  property, so the SDK cannot name where an answer lands; the API resolves each id
-  against the campaign it stored. The API withholds both layouts from any web build
-  below 1.4.0.
-
-
-- **Two in-app layouts: `HALF_INTERSTITIAL` and `ALERT`.** The first anchors the panel to
-  the lower half so the app stays partly visible; the second is the compact, centred,
-  text-only alert shape. Both behave as dialogs — backdrop, `role="dialog"`, focus trap —
-  and `ALERT` never renders an image even when the campaign carries one.
-
-  The API withholds both from any web build below 1.3.0, so an older SDK is never offered
-  a layout it cannot draw and nothing has to be released in lockstep.
+  Written for 1.1.1, which was never tagged or published — the fix reaches npm here.
 
 ## [1.2.0] — 2026-09-02
 
@@ -79,17 +104,7 @@ Breaking changes to the public surface wait for a major release, and are listed 
   their first load after the upgrade: emitting would have reported the whole existing audience as
   installs on the day you shipped. Install-based segments start empty and fill forward.
 
-## [1.1.1] — 2026-08-23
-### Fixed
-
-- **In-app button destinations can no longer carry an executing scheme.** A button whose
-  `value` was `javascript:`, `data:`, `vbscript:`, `file:` or `blob:` was assigned straight to
-  an `<a href>` and, for `DEEP_LINK`, handed to `location.assign` — either of which executes it
-  in the host page's origin. Both sinks now parse the destination and refuse those schemes; a
-  `URL` button with an unusable destination renders as a plain button rather than a link. The
-  API validates the same set on write, so this is the second line for bundles authored earlier.
-
-## [1.1.0] — 2026-08-19
+## [1.1.0] — 2026-08-23
 
 ### Added
 

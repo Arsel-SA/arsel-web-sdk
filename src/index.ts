@@ -4,6 +4,7 @@ import {
   SCREEN_EVENT,
   enqueue,
   flush,
+  resetRetryPacing,
 } from './events';
 import * as inapp from './inapp';
 import { render } from './inapp-view';
@@ -151,6 +152,9 @@ export function init(config: ArselConfig): Promise<void> {
   if (ready) return ready;
   ready = (async () => {
     debug = config.debug ?? false;
+    // A re-init is a fresh start; a pacing gate left by the previous config
+    // must not hold the new one back.
+    resetRetryPacing();
 
     // Never throws. `init()` is routinely called un-awaited, so rejecting here
     // surfaced as an unhandled rejection the host could not catch, and an

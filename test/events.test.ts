@@ -5,6 +5,7 @@ import {
   RESERVED_PREFIX,
   enqueue,
   flush,
+  resetRetryPacing,
 } from '../src/events';
 import {
   KEYS,
@@ -39,11 +40,17 @@ async function enqueueOffline(names: string[]) {
   vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
   for (const name of names) await enqueue(name, {});
   await flush().catch(() => {}); // join any in-flight drain before swapping fetch
+  // Those failed sends armed the real backoff gate. The helper's job is to
+  // leave events queued, not to leave the SDK mid-retry, so clear it.
+  resetRetryPacing();
 }
 
 describe('event bodies', () => {
   beforeEach(async () => {
     vi.unstubAllGlobals();
+    // enqueueOffline() trips the retry gate on purpose; without this the next
+    // test's flush would be held back by the previous test's backoff.
+    resetRetryPacing();
     await clearEvents();
     await set(KEYS.clientKey, CLIENT_KEY);
     await set(KEYS.baseUrl, BASE_URL);
@@ -157,6 +164,9 @@ describe('event bodies', () => {
 describe('batching and idempotency', () => {
   beforeEach(async () => {
     vi.unstubAllGlobals();
+    // enqueueOffline() trips the retry gate on purpose; without this the next
+    // test's flush would be held back by the previous test's backoff.
+    resetRetryPacing();
     await clearEvents();
     await set(KEYS.clientKey, CLIENT_KEY);
     await set(KEYS.baseUrl, BASE_URL);
@@ -223,6 +233,8 @@ describe('batching and idempotency', () => {
     expect(await allEvents(QUEUE.events)).toHaveLength(2);
     const firstKey = failMock.mock.calls[0]![1].headers['Idempotency-Key'];
 
+    // The 503 armed the backoff gate; stand in for the wait elapsing.
+    resetRetryPacing();
     const okMock = mockFetch(202);
     await flush();
 
@@ -234,6 +246,9 @@ describe('batching and idempotency', () => {
 describe('durability', () => {
   beforeEach(async () => {
     vi.unstubAllGlobals();
+    // enqueueOffline() trips the retry gate on purpose; without this the next
+    // test's flush would be held back by the previous test's backoff.
+    resetRetryPacing();
     await clearEvents();
     await set(KEYS.clientKey, CLIENT_KEY);
     await set(KEYS.baseUrl, BASE_URL);
@@ -318,5 +333,62 @@ describe('durability', () => {
 describe('reserved namespace', () => {
   it('names the SDK owns are prefixed so a customer can never collide', () => {
     expect(RESERVED_PREFIX).toBe('arsel.');
+  });
+});
+
+describe('retry pacing', () => {
+  beforeEach(async () => {
+    vi.unstubAllGlobals();
+    resetRetryPacing();
+    await clearEvents();
+    await set(KEYS.clientKey, CLIENT_KEY);
+    await set(KEYS.baseUrl, BASE_URL);
+  });
+
+  it('stops hammering after a retryable failure', async () => {
+    // The regression this exists for: drain() used to just return, and every
+    // subsequent track() re-fired it immediately, so a 429 was answered by
+    // more requests at whatever rate the host app called track().
+    await enqueueOffline(['first']);
+
+    const failMock = mockFetch(429);
+    await flush();
+    expect(failMock).toHaveBeenCalledTimes(1);
+
+    await enqueue('second', {});
+    await enqueue('third', {});
+    await flush();
+
+    expect(failMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('resumes once the gate expires', async () => {
+    await enqueueOffline(['first']);
+    mockFetch(503);
+    await flush();
+
+    resetRetryPacing();
+    const okMock = mockFetch(202);
+    await flush();
+
+    expect(okMock).toHaveBeenCalled();
+    expect(await allEvents(QUEUE.events)).toHaveLength(0);
+  });
+
+  it('clears the gate once a batch lands', async () => {
+    await enqueueOffline(['first']);
+    mockFetch(503);
+    await flush();
+
+    resetRetryPacing();
+    mockFetch(202);
+    await flush();
+
+    // A delivered batch means the backend is taking traffic, so a later
+    // failure starts its curve from the base again rather than mid-ramp.
+    await enqueue('second', {});
+    const failMock = mockFetch(503);
+    await flush();
+    expect(failMock).toHaveBeenCalledTimes(1);
   });
 });

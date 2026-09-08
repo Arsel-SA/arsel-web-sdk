@@ -1,4 +1,5 @@
 import { KEYS, set } from './store';
+import { parseRetryAfter } from './retry';
 import { SDK_VERSION } from './version';
 
 /** Identifies the SDK build on every request; the backend records it. */
@@ -17,6 +18,20 @@ export interface Response<T = unknown> {
   result: Result;
   code: number;
   body: T | null;
+  /** Parsed `Retry-After`, when the server sent one. Null otherwise. */
+  retryAfterMs: number | null;
+}
+
+/**
+ * Defensive: a mocked or opaque response may carry no `headers` at all, and a
+ * missing header must never cost us the response itself.
+ */
+function readRetryAfter(response: globalThis.Response): number | null {
+  try {
+    return parseRetryAfter(response.headers?.get?.('retry-after'));
+  } catch {
+    return null;
+  }
 }
 
 /** No status line at all — DNS failure, offline, TLS error. */
@@ -78,7 +93,12 @@ export async function post<T = unknown>(
     });
   } catch {
     await record(path, CODE_NO_RESPONSE);
-    return { result: RESULT.retryable, code: CODE_NO_RESPONSE, body: null };
+    return {
+      result: RESULT.retryable,
+      code: CODE_NO_RESPONSE,
+      body: null,
+      retryAfterMs: null,
+    };
   }
 
   await record(path, response.status);
@@ -89,7 +109,12 @@ export async function post<T = unknown>(
   } catch {
     /* an empty or non-JSON body is fine — the status is what matters */
   }
-  return { result, code: response.status, body: parsed };
+  return {
+    result,
+    code: response.status,
+    body: parsed,
+    retryAfterMs: readRetryAfter(response),
+  };
 }
 
 export async function getJson<T>(
@@ -108,7 +133,12 @@ export async function getJson<T>(
     });
   } catch {
     await record(path, CODE_NO_RESPONSE);
-    return { result: RESULT.retryable, code: CODE_NO_RESPONSE, body: null };
+    return {
+      result: RESULT.retryable,
+      code: CODE_NO_RESPONSE,
+      body: null,
+      retryAfterMs: null,
+    };
   }
 
   await record(path, response.status);
@@ -123,5 +153,6 @@ export async function getJson<T>(
     result: classify(response.status, authenticated),
     code: response.status,
     body: parsed,
+    retryAfterMs: readRetryAfter(response),
   };
 }

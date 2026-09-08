@@ -21,7 +21,7 @@ Check `pendingEvents` and `lastResponseCode`.
 | `202` | Delivered and accepted | Look under the *contact*, not the event list — a client-key event auto-creates its definition, so a brand-new name appears only after the first one lands |
 | `403` | Origin not allowed | Add this exact origin in Settings → Push → Web. `https://www.x.com` ≠ `https://x.com` |
 | `401` | Bad client key | You may be using a secret API key. The client key starts `pub_` |
-| `429` | Rate limited | Kept and retried, but the page has no backoff timer — a retry rides the next `track()`, `online` or tab-visible event. Sustained `429`s mean the organization is over its event budget, so send fewer events rather than waiting it out |
+| `429` | Rate limited | Kept and retried on a jittered backoff (5s, doubling, capped at 5 min), never before the `retry-after` the server sent. Sustained `429`s mean the organization is over its event budget, so send fewer events rather than waiting it out |
 | `-1` | No response at all | Offline, DNS, TLS, or an ad blocker. Check the Network tab |
 | `null` | Nothing was ever sent | `init()` never resolved — see below |
 

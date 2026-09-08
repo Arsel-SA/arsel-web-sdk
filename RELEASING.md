@@ -66,6 +66,11 @@ step and adding `--provenance` back.
 
 ## Per release
 
+These steps are **one commit, and that commit is the release** — never bump the version in a feature
+commit. An untagged bump publishes nothing while burning the number: the API's per-layout SDK gate
+then withholds layouts from a build that does not exist, and the feature stays dark in the field
+even though the code is on `main`.
+
 1. Retitle `## [Unreleased]` in `CHANGELOG.md` to `## [X.Y.Z] — YYYY-MM-DD` (a fresh
    `## [Unreleased]` heading goes above it). The workflow fails if the tagged version has no
    section.

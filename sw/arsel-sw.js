@@ -15,7 +15,7 @@
 
 // Duplicated from src/ on purpose — this file is served as-is, uncompiled, and
 // cannot import from the SDK build. Change a constant there, change it here.
-const SDK_VERSION = '1.1.0';
+const SDK_VERSION = '1.3.0';
 const DB_NAME = 'arsel';
 const KV_STORE = 'kv';
 /** Reserved data key: refresh the in-app bundle, render nothing. */

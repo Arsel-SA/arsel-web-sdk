@@ -55,7 +55,7 @@ UMD build straight from npm — **pin the version**, and add an
 compromised CDN cannot run arbitrary script on your pages:
 
 ```html
-<script src="https://unpkg.com/@arsel.sa/web-sdk@1.0.0/dist/arsel.umd.cjs"
+<script src="https://unpkg.com/@arsel.sa/web-sdk@1.3.0/dist/arsel.umd.cjs"
         integrity="sha384-…" crossorigin="anonymous"></script>
 <script>Arsel.init({ clientKey: 'pub_…', baseUrl: 'https://api.arsel.sa' })</script>
 ```
