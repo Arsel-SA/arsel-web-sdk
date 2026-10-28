@@ -133,6 +133,8 @@ On logout. It:
 - forgets `externalId`, `email`, `phoneNumber`
 - **rotates the anonymous id**, so the next person's events do not attach to the last person's contact
 - forgets the current session, so the next visitor opens a new one
+- re-registers a registered browser under the new anonymous id, so its push subscription stops
+  receiving the previous person's notifications
 
 It deliberately does **not** unsubscribe from push. The backend's opt-out is durable and
 non-resurrectable by design, so a logout that called it would permanently kill push on that machine

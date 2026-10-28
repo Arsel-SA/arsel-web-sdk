@@ -123,6 +123,8 @@ reset(): Promise<void>
 
 Logout. Forgets `externalId`, `email`, `phoneNumber` and the current session, and **rotates the
 anonymous id** so the next person on this browser doesn't inherit the previous one's history.
+A registered browser is then re-registered under the new id, which moves its push subscription
+off the previous person's contact — without that, they would keep receiving that person's pushes.
 
 **Does not unsubscribe from push** — deliberately. The backend's opt-out is durable and
 non-resurrectable, so calling it on logout would permanently kill push on a shared machine.

@@ -264,6 +264,75 @@ describe('reconcile', () => {
   });
 });
 
+describe('rebind', () => {
+  async function seedRegistered(endpoint: string | null): Promise<void> {
+    await store.set(store.KEYS.installationId, 'inst-1');
+    await store.set(store.KEYS.deviceSecret, 'ds-1');
+    await store.set(store.KEYS.endpoint, endpoint);
+    await store.set(store.KEYS.vapidKeyVersion, 1);
+  }
+
+  function registerBody(calls: Array<{ url: string; options?: RequestInit }>) {
+    const call = calls.find((c) => c.url.endsWith('/push/subscriptions'));
+    return call ? JSON.parse(call.options!.body as string) : null;
+  }
+
+  it('does nothing for a browser that never registered', async () => {
+    stubBrowser(async () => fakeRegistration());
+    const calls = stubApi();
+
+    await push.register('/arsel-sw.js');
+    await push.rebind();
+
+    expect(calls).toHaveLength(0);
+  });
+
+  it('re-sends a push subscription under the current anonymous id', async () => {
+    const registration = fakeRegistration();
+    registration.pushManager.getSubscription = vi
+      .fn()
+      .mockResolvedValue(fakeSubscription());
+    stubBrowser(async () => registration);
+    const calls = stubApi();
+    await seedRegistered('https://push.example/ep-1');
+
+    await push.register('/arsel-sw.js');
+    await push.rebind();
+
+    const body = registerBody(calls);
+    expect(body.installationId).toBe('inst-1');
+    expect(body.anonymousId).toBe(await store.anonymousId());
+    // The real subscription and permission, so the device stays reachable.
+    expect(body.endpoint).toBe('https://push.example/ep-1');
+    expect(body.enablementStatus).toBe('AUTHORIZED');
+  });
+
+  it('re-registers an in-app-only browser under the current anonymous id', async () => {
+    stubBrowser(async () => fakeRegistration());
+    const calls = stubApi();
+    await seedRegistered(null);
+
+    await push.rebind();
+
+    const body = registerBody(calls);
+    expect(body.installationId).toBe('inst-1');
+    expect(body.anonymousId).toBe(await store.anonymousId());
+    expect(body.endpoint).toBeUndefined();
+  });
+
+  it('never downgrades a push-subscribed browser it cannot read the subscription of', async () => {
+    // Events-only init: no worker to ask. The in-app-only body would report
+    // NOT_DETERMINED and mark a granted device unreachable.
+    stubBrowser(async () => fakeRegistration());
+    const calls = stubApi();
+    await seedRegistered('https://push.example/ep-1');
+
+    await push.rebind();
+
+    expect(registerBody(calls)).toBeNull();
+  });
+});
+
 describe('optOut', () => {
   it('revokes server-side with device auth', async () => {
     stubBrowser(async () => fakeRegistration());

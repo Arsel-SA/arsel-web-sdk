@@ -430,20 +430,7 @@ async function runRegisterDevice(): Promise<boolean> {
     await set(KEYS.installationId, installationId);
   }
 
-  const response = await post<{ deviceSecret?: string }>(
-    baseUrl,
-    subscriptionsPath(clientKey),
-    {
-      installationId,
-      platform: 'web',
-      anonymousId: anon,
-      // Truthful: no prompt has been shown. Reporting DENIED would mark the
-      // device unreachable for push it was never asked about.
-      enablementStatus: 'NOT_DETERMINED',
-      deviceTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      deviceLocale: navigator.language,
-    },
-  );
+  const response = await postInAppOnly(clientKey, baseUrl, installationId, anon);
 
   if (response.code === 403) {
     // The one auth failure on this surface that is not the opaque 404, and the
@@ -461,4 +448,63 @@ async function runRegisterDevice(): Promise<boolean> {
     await set(KEYS.deviceSecret, response.body.deviceSecret);
   }
   return true;
+}
+
+function postInAppOnly(
+  clientKey: string,
+  baseUrl: string,
+  installationId: string,
+  anon: string,
+) {
+  return post<{ deviceSecret?: string }>(baseUrl, subscriptionsPath(clientKey), {
+    installationId,
+    platform: 'web',
+    anonymousId: anon,
+    // Truthful: no prompt has been shown. Reporting DENIED would mark the
+    // device unreachable for push it was never asked about.
+    enablementStatus: 'NOT_DETERMINED',
+    deviceTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    deviceLocale: navigator.language,
+  });
+}
+
+async function currentSubscription(): Promise<PushSubscription | null> {
+  if (!isSupported()) return null;
+  try {
+    const registration = await activeRegistration();
+    return await registration.pushManager.getSubscription();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Re-register under the anonymous id `reset()` just rotated. Registration is the
+ * only call that carries it, and it is what binds this browser to a contact —
+ * without this, a logged-out browser keeps receiving the previous person's
+ * pushes and in-app messages.
+ */
+export async function rebind(): Promise<void> {
+  const [clientKey, baseUrl, installationId, deviceSecret, endpoint, keyVersion] =
+    await Promise.all([
+      get<string>(KEYS.clientKey),
+      get<string>(KEYS.baseUrl),
+      get<string>(KEYS.installationId),
+      get<string>(KEYS.deviceSecret),
+      get<string>(KEYS.endpoint),
+      get<number>(KEYS.vapidKeyVersion),
+    ]);
+  // Never registered: nothing is bound to anyone yet.
+  if (!clientKey || !baseUrl || !installationId || !deviceSecret) return;
+
+  if (!endpoint) {
+    await postInAppOnly(clientKey, baseUrl, installationId, await anonymousId());
+    return;
+  }
+  // A push-subscribed browser re-sends its real subscription: the in-app-only
+  // body reports NOT_DETERMINED, which would mark a granted device unreachable.
+  const subscription = await currentSubscription();
+  if (subscription && keyVersion != null) {
+    await sendSubscription(subscription, keyVersion);
+  }
 }

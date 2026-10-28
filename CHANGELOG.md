@@ -7,6 +7,15 @@ Breaking changes to the public surface wait for a major release, and are listed 
 
 ## [Unreleased]
 
+### Fixed
+
+- **A logged-out browser kept receiving the previous user's pushes.** `reset()` rotated the
+  anonymous id but never told the backend, so the subscription stayed bound to the contact who
+  logged out: their transactional and automation pushes, and their in-app messages, kept reaching
+  whoever used the browser next. `reset()` now re-registers a registered browser under the new
+  anonymous id, which moves the subscription to it. A push-subscribed browser re-sends its existing
+  subscription, so its permission state is unchanged; nothing is unsubscribed.
+
 ## [1.3.0] — 2026-09-08
 
 ### Added

@@ -368,6 +368,8 @@ export async function reset(): Promise<void> {
     remove(KEYS.sessionStartedAt),
   ]);
   await rotateAnonymousId();
+  // Before the audience refetch, so it is fetched for the new anonymous contact.
+  await push.rebind().catch(() => {});
   await inapp.invalidateAudience();
   log('identity reset');
 }
