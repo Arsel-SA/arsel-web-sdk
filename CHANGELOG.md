@@ -7,6 +7,11 @@ Breaking changes to the public surface wait for a major release, and are listed 
 
 ## [Unreleased]
 
+## [1.3.1] — 2026-11-04
+
+If you copied `arsel-sw.js` into your web root, copy it again: updating the package does not
+refresh a copied file.
+
 ### Fixed
 
 - **A logged-out browser kept receiving the previous user's pushes.** `reset()` rotated the
