@@ -8,10 +8,10 @@ You need two things from the Arsel dashboard:
 
 | | Where | Looks like |
 | --- | --- | --- |
-| Client key | Settings → Push → Web | `pub_…` |
+| Client key | Integration → Push | `pub_…` |
 | API base URL | Fixed per environment | `https://api.arsel.sa` |
 
-Your site's origin must be on the org's allowlist (Settings → Push → Web → Allowed origins). Requests
+Your site's origin must be on the org's allowlist (Integration → Push → Web → Allowed origins). Requests
 from an origin that isn't listed are rejected with `403`; that check is what stands between a
 page-readable key and someone else farming your org's events.
 
@@ -124,6 +124,9 @@ and tell the SDK to use the worker you registered:
 ```js
 await Arsel.init({ clientKey, baseUrl, serviceWorker: 'external' });
 ```
+
+Keep your worker a classic (non-module) worker, and load the copied file rather than bundling
+`@arsel.sa/web-sdk/sw`. [Web push](web-push.md) lists the other pitfalls of merging.
 </details>
 
 Verify it is served correctly — this is the single most common setup mistake:

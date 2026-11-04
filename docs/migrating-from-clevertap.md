@@ -104,14 +104,21 @@ CleverTap emits `Session Concluded` (and App Launched on mobile). We emit `arsel
 visit, backdated. A visitor who never returns produces no end event — a real difference if you built
 reporting on session counts.
 
-### Web push subscriptions do not transfer
+### Web push subscriptions transfer only with your VAPID keypair
 
-Not a limitation of either product: a Web Push subscription is encrypted to the sender's VAPID
-keypair, so one minted under CleverTap's keys cannot be sent to under ours.
+A Web Push subscription is bound to the VAPID keypair it was created under, so it can only be sent
+to with that key.
 
-The recovery is better than it sounds. **Notification permission is granted per origin, not per
-vendor**, so a browser that already accepted push from your site is not prompted again — the Arsel
-service worker subscribes silently on the user's next visit. Plan for web reach to rebuild over days
+**If you hold the keypair CleverTap used** (you generated it and pasted it into CleverTap), import
+it when you first provision Web Push in Arsel — choose **Import my existing keypair**. Existing
+subscriptions then keep working. The import is only offered at first provisioning; once Arsel has
+generated a keypair it can't be swapped, so get this right before enabling Web Push. See
+[Migrating an existing web audience](https://docs.arsel.sa/guides/push#migrating-an-existing-web-audience).
+
+**If you don't have it**, existing subscriptions can't be carried over. The recovery is better than
+it sounds. **Notification permission is granted per origin, not per vendor**, so a browser that
+already accepted push from your site is not prompted again: on the user's next visit, `init()`
+replaces the old subscription with one under Arsel's key, silently. Plan for web reach to rebuild over days
 of normal traffic rather than at cut-over, and don't re-prompt users who already granted permission.
 
 ### Historical events don't come across

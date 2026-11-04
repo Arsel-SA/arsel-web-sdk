@@ -26,7 +26,10 @@ Starts the SDK: stores the config, mints the anonymous id, drains the pre-init `
 registers the service worker (only when `serviceWorkerPath` is configured — never by default),
 attaches session listeners, opens a session if the page is actually visible (a background tab or a
 prerendered page opens its session on the visibility transition instead), flushes anything stranded
-by a previous page, and reconciles the push subscription if the org rotated its VAPID keys.
+by a previous page, and reconciles the push subscription: when permission is already granted and
+the browser's existing subscription wasn't made under the org's current VAPID key — the org rotated
+its keys, or the subscription belongs to a previous push provider — it replaces it with a fresh one,
+silently, with no prompt.
 
 **Idempotent.** A second call returns the first one's promise, so a framework that mounts twice does
 not mint two identities.
@@ -81,6 +84,24 @@ Works with no permission, no subscription and nobody logged in. See [Events](eve
 
 ```js
 Arsel.track('order.placed', { order_id: 'A-1023', total: 149.99, currency: 'SAR' });
+```
+
+---
+
+## `screen(name, properties?)`
+
+```ts
+screen(name: string, properties?: EventProperties): Promise<void>
+```
+
+Records a screen or page view as one `arsel.screen_view` event, with `name` in `screen_name`. It
+reaches segments and automations like any event, and it is the trigger for `SCREEN_VIEW` in-app
+messages. Not recorded automatically — in a single-page app, call it on each route change. Don't
+also `track()` the same view: the backend treats a screen view and a custom event as different
+trigger types. A blank name is ignored.
+
+```js
+router.afterEach((to) => Arsel.screen(String(to.name ?? to.path)));
 ```
 
 ---

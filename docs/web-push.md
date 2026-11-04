@@ -50,6 +50,22 @@ cannot share a scope, and the SDK deliberately never overwrites yours. `importSc
 from inside your own worker instead, and initialize with `serviceWorker: 'external'`; the SDK then
 uses the worker controlling the page.
 
+Things that bite when merging into an existing worker:
+
+- **Load it as a static file.** Copy `arsel-sw.js` into your public root and `importScripts` it.
+  Up to 1.3.0, importing `@arsel.sa/web-sdk/sw` into a bundled worker gets tree-shaken to nothing.
+- **Classic workers only.** `importScripts()` throws inside an ES-module worker (for vite-plugin-pwa,
+  keep `devOptions.type: 'classic'`).
+- **A missing file breaks your whole worker quietly.** If your SPA fallback answers `/arsel-sw.js`
+  with `index.html`, your worker can still show as activated but without Arsel's handlers — and,
+  with Workbox, without its precache. Check every origin with `curl -I`.
+- **Shared global scope (1.3.0 and earlier).** `arsel-sw.js` declares top-level names (`DB_NAME`,
+  `WIRE`, `SDK_VERSION`, …). A top-level `const` of the same name in your worker is a `SyntaxError`
+  and stops it installing. Later versions keep everything inside one function scope.
+- **Notification clicks (1.3.0 and earlier).** Arsel's `notificationclick` handler runs for every
+  notification the worker shows, including your own: it closes it and opens `/`. Later versions
+  ignore notifications that aren't Arsel's.
+
 ### 2. VAPID keys
 
 Generated per org in the dashboard. You never handle them: the SDK fetches the public key at
