@@ -15,6 +15,15 @@ Breaking changes to the public surface wait for a major release, and are listed 
   whoever used the browser next. `reset()` now re-registers a registered browser under the new
   anonymous id, which moves the subscription to it. A push-subscribed browser re-sends its existing
   subscription, so its permission state is unchanged; nothing is unsubscribed.
+- **`importScripts('/arsel-sw.js')` could break the host's service worker.** Its top-level names
+  (`SDK_VERSION`, `WIRE`, `openDb`, …) shared the host worker's global scope, so a host declaring
+  the same name with `const` hit a `SyntaxError` and the whole worker failed to install. The file now
+  keeps everything inside one function scope.
+- **Tapping the host's own notifications was handled as an Arsel tap.** Merged into a host worker,
+  `notificationclick` closed every notification, reported an `opened` engagement and navigated to
+  `/`. It now returns early for notifications that aren't Arsel's.
+- **Bundlers dropped `@arsel.sa/web-sdk/sw`.** `"sideEffects": false` let a bundler tree-shake the
+  import to nothing; the service worker file is now declared as having side effects.
 
 ## [1.3.0] — 2026-09-08
 

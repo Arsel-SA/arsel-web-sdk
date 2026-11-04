@@ -22,7 +22,9 @@
     "sdk"
   ],
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./sw/arsel-sw.js"
+  ],
   "publishConfig": {
     "access": "public"
   },
