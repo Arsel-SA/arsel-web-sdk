@@ -45,6 +45,8 @@ not mint two identities.
 | `serviceWorkerPath` | `string` | for push | Path to the self-hosted `arsel-sw.js`. **No default** — without it the SDK registers no worker and only the events API runs. Scope is bound to this path's directory. |
 | `serviceWorker` | `'external'` | no | Your own service worker `importScripts` arsel-sw.js; the SDK registers nothing and uses the worker controlling the page. |
 | `debug` | `boolean` | no | Log SDK decisions to the console. Default `false`. |
+| `inApp` | `boolean | InAppOptions` | no | In-app messages. Default `true`; `false` disables, an object tunes the layer. |
+| `chat` | `boolean | ChatOptions` | no | The website chat widget, shown when the organization switched it on. Default `true`; `false` keeps it off this page, `{ zIndex }` tunes the layer. See [Website chat](chat.md). |
 
 ### Throws
 
@@ -193,6 +195,18 @@ button.addEventListener('click', async () => {
 
 ---
 
+## `openChat()` / `closeChat()`
+
+```ts
+openChat(): Promise<void>
+closeChat(): Promise<void>
+```
+
+Open or close the chat window, for a site's own "Contact us" control. Both resolve without doing
+anything on a page where the organization shows no widget, or before `init()`.
+
+---
+
 ## `getAnonymousId()`
 
 ```ts
@@ -293,6 +307,9 @@ Every request carries an `X-Arsel-SDK: web/<version>` header.
 | `POST /api/v1/orgs/{clientKey}/push/subscriptions` | page + service worker | none (registration mints the secret) |
 | `POST /api/v1/orgs/{clientKey}/push/subscriptions/unsubscribe` | page | `X-Arsel-Device-Auth: <deviceSecret>` |
 | `POST /api/v1/orgs/{clientKey}/push/engagements` | service worker | `X-Arsel-Device-Auth: <deviceSecret>` |
+| `GET /api/v1/orgs/{clientKey}/chat/config` | page | none (public config) |
+| `POST /api/v1/orgs/{clientKey}/chat/sessions`, `…/chat/messages`, `…/chat/stream-ticket`, `…/chat/leads`; `GET …/chat/messages` | page | `X-Arsel-Device-Auth: <deviceSecret>` |
+| `GET /api/v1/orgs/{clientKey}/chat/stream` | page | single-use ticket in the query (server-sent events) |
 
 Event delivery batches up to 50 queued events per request (`{ "events": [...] }`; a single event is
 sent as a bare object) and stamps each request with an `Idempotency-Key` derived from the persisted

@@ -153,6 +153,8 @@ export const KEYS = {
    * counter makes the cap per-page, which is not a cap at all.
    */
   inAppSession: 'inapp_session',
+  /** `{ fetchedAtMs, config }` — the chat widget as last fetched; `config: null` means none. */
+  chatConfig: 'chat_config',
 } as const;
 
 /**

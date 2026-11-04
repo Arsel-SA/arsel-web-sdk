@@ -1,0 +1,70 @@
+/**
+ * The widget's own labels, in both languages the dashboard texts come in.
+ * What an organization can change (welcome, placeholder, offline texts) comes
+ * from the server; these are the fixed controls around them.
+ */
+export type ChatLocale = 'en' | 'ar';
+
+export interface ChatStrings {
+  open: string;
+  close: string;
+  send: string;
+  online: string;
+  away: string;
+  poweredBy: string;
+  name: string;
+  email: string;
+  phone: string;
+  submit: string;
+  skip: string;
+  sending: string;
+  failed: string;
+  retry: string;
+  you: string;
+  team: string;
+  invalidEmail: string;
+  invalidPhone: string;
+}
+
+export const CHAT_STRINGS: Readonly<Record<ChatLocale, ChatStrings>> = Object.freeze({
+  en: Object.freeze({
+    open: 'Open chat',
+    close: 'Close chat',
+    send: 'Send',
+    online: 'Online',
+    away: 'Away',
+    poweredBy: 'Powered by',
+    name: 'Name',
+    email: 'Email',
+    phone: 'Phone',
+    submit: 'Continue',
+    skip: 'Skip',
+    sending: 'Sending…',
+    failed: 'Not sent.',
+    retry: 'Retry',
+    you: 'You',
+    team: 'Team',
+    invalidEmail: 'Enter a valid email address.',
+    invalidPhone: 'Enter a phone number with the country code, e.g. +966501234567.',
+  }),
+  ar: Object.freeze({
+    open: 'افتح المحادثة',
+    close: 'أغلق المحادثة',
+    send: 'إرسال',
+    online: 'متصل',
+    away: 'غير متواجد',
+    poweredBy: 'مدعوم من',
+    name: 'الاسم',
+    email: 'البريد الإلكتروني',
+    phone: 'رقم الجوال',
+    submit: 'متابعة',
+    skip: 'تخطي',
+    sending: 'جارٍ الإرسال…',
+    failed: 'لم تُرسل.',
+    retry: 'أعد المحاولة',
+    you: 'أنت',
+    team: 'الفريق',
+    invalidEmail: 'أدخل بريداً إلكترونياً صحيحاً.',
+    invalidPhone: 'أدخل رقم الجوال مع رمز الدولة، مثل +966501234567.',
+  }),
+});

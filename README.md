@@ -1,6 +1,6 @@
 # Arsel Web SDK
 
-Events, identity and web push for the browser. ~4 kB gzipped, no dependencies, ESM + UMD.
+Events, identity, web push, in-app messages and website chat for the browser. ~21 kB gzipped, no dependencies, ESM + UMD.
 
 ```js
 import Arsel from '@arsel.sa/web-sdk';
@@ -25,6 +25,7 @@ history. Only delivery needs a subscription. Nothing in the events API waits on 
 | **[Identity](docs/identity.md)** | Anonymous → identified, the identifier ladder, merges, `reset()`. |
 | **[Events](docs/events.md)** | Custom events, properties, limits, reserved events, sessions, durability. |
 | **[Web push](docs/web-push.md)** | Service worker, VAPID, permission UX, browser support, engagements. |
+| **[Website chat](docs/chat.md)** | The chat widget: what shows it, what the visitor sees, identity, opening it from your own button. |
 | **[API reference](docs/api-reference.md)** | Every method: signature, arguments, returns, when to call it. |
 | **[Troubleshooting](docs/troubleshooting.md)** | Symptom → cause → fix, and the things that only look like bugs. |
 | **[Data collection](docs/data-collection.md)** | What the SDK stores and sends, and what it never does. GDPR/erasure. |

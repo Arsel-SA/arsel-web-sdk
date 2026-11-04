@@ -6,6 +6,8 @@ import {
   flush,
   resetRetryPacing,
 } from './events';
+import * as chat from './chat';
+import { mountChat } from './chat-view';
 import * as inapp from './inapp';
 import { render } from './inapp-view';
 import { hasDeviceIdentity, reportInstall } from './install';
@@ -25,6 +27,7 @@ import type {
   ArselConfig,
   ArselDiagnostics,
   ArselIdentity,
+  ChatOptions,
   EventProperties,
   InAppOptions,
 } from './types';
@@ -34,6 +37,7 @@ export type {
   ArselConfig,
   ArselDiagnostics,
   ArselIdentity,
+  ChatOptions,
   EventProperties,
   InAppOptions,
 } from './types';
@@ -216,6 +220,17 @@ export function init(config: ArselConfig): Promise<void> {
       }
     }
 
+    // The chat widget: one small config fetch, and nothing drawn unless the
+    // organization switched it on. The browser is registered when the visitor
+    // first writes, never here.
+    const chatOptions = resolveChatOptions(config.chat);
+    if (chatOptions) {
+      chat.setRenderer(makeChatRenderer(chatOptions));
+      void chat.start(chatOptions, debug).catch((error) => {
+        log(`chat failed to start: ${error instanceof Error ? error.message : ''}`);
+      });
+    }
+
     // Anything stranded by a previous page's close goes out now. Caught like
     // every other fire-and-forget call here: nothing awaits these, so a
     // rejection would reach the page as one the host cannot intercept.
@@ -371,6 +386,8 @@ export async function reset(): Promise<void> {
   // Before the audience refetch, so it is fetched for the new anonymous contact.
   await push.rebind().catch(() => {});
   await inapp.invalidateAudience();
+  // The next person on this browser must not see the previous one's thread.
+  await chat.onReset();
   log('identity reset');
 }
 
@@ -416,6 +433,22 @@ export async function promptForPush(): Promise<boolean> {
     return false;
   }
   return push.subscribe();
+}
+
+/**
+ * Opens the chat window, for a site's own "Contact us" button. Does nothing
+ * when the organization shows no widget on this page.
+ */
+export async function openChat(): Promise<void> {
+  await ready;
+  if (!started()) return;
+  await chat.open();
+}
+
+export async function closeChat(): Promise<void> {
+  await ready;
+  if (!started()) return;
+  chat.close();
 }
 
 /** The identity events carry before login. Rotated by {@link reset}. */
@@ -498,6 +531,8 @@ export const Arsel = {
   reset,
   optOut,
   promptForPush,
+  openChat,
+  closeChat,
   getAnonymousId,
   diagnostics,
   flushNow,
@@ -564,3 +599,36 @@ function makeRenderer(
 
 /** Below the maximum, so a host site's own top-most modal still wins. */
 const DEFAULT_IN_APP_Z_INDEX = 2_147_483_000;
+/** Below the in-app layer, so a campaign's message still shows over an open chat. */
+const DEFAULT_CHAT_Z_INDEX = 2_147_482_000;
+
+/** `undefined` when the chat is switched off for this page; a fully-resolved config otherwise. */
+function resolveChatOptions(
+  value: ArselConfig['chat'],
+): Required<ChatOptions> | undefined {
+  if (value === false) return undefined;
+  const provided = typeof value === 'object' && value !== null ? value : {};
+  return { zIndex: provided.zIndex ?? DEFAULT_CHAT_Z_INDEX };
+}
+
+/**
+ * Mounts the widget the first time the engine has a config, on a page with
+ * a body to mount into; later states reach the view through its own
+ * subscription.
+ */
+function makeChatRenderer(
+  options: Required<ChatOptions>,
+): (state: chat.ChatState) => void {
+  let mounted = false;
+  return (state) => {
+    if (mounted || !state.config) return;
+    if (typeof document === 'undefined' || !document.body) return;
+    mounted = true;
+    try {
+      mountChat(state, options.zIndex);
+    } catch (error) {
+      mounted = false;
+      log(`chat render failed: ${error instanceof Error ? error.message : ''}`);
+    }
+  };
+}

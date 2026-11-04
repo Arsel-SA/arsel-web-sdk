@@ -7,6 +7,18 @@ Breaking changes to the public surface wait for a major release, and are listed 
 
 ## [Unreleased]
 
+### Added
+
+- **Website chat.** The chat widget an organization switches on under Chat → Widget in the
+  dashboard: a launcher and a window in the organization's colour and language (Arabic and
+  English, right to left where the page is), the thread with live replies over server-sent
+  events (polling where a stream cannot open), the outside-hours notice and the offline form,
+  and the "Powered by Arsel" line the plan decides. On by default, `chat: false` keeps it off a
+  page, `chat: { zIndex }` tunes the layer, and `openChat()` / `closeChat()` drive it from the
+  site's own controls. The browser is registered on the visitor's first message, never on page
+  load, and the thread follows the contact once the visitor identifies. One small config request
+  per page view, cached for five minutes, is the whole cost on a site without the widget.
+
 ## [1.3.1] — 2026-11-04
 
 If you copied `arsel-sw.js` into your web root, copy it again: updating the package does not

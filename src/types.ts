@@ -37,6 +37,22 @@ export interface ArselConfig {
    * and renders them. Pass `false` to disable, or an object to tune the layer.
    */
   inApp?: boolean | InAppOptions;
+
+  /**
+   * The website chat widget. `true` (the default) shows the organization's
+   * widget on this page when they have switched it on; nothing is drawn, and
+   * nothing but one small config fetch happens, otherwise. Pass `false` to
+   * keep it off this page, or an object to tune the layer.
+   */
+  chat?: boolean | ChatOptions;
+}
+
+export interface ChatOptions {
+  /**
+   * Stacking context for the widget. Default 2147482000 — below the in-app
+   * layer, so a message a campaign shows still appears over an open chat.
+   */
+  zIndex?: number;
 }
 
 export interface InAppOptions {
