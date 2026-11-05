@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ChatState, ChatWidgetConfig } from '../src/chat';
+import type { ChatMessage, ChatState, ChatWidgetConfig } from '../src/chat-types';
 
 /**
  * The widget's failure mode is silent: a launcher nobody can reach with a
@@ -46,7 +46,26 @@ function state(change: Partial<ChatState> = {}): ChatState {
     unread: 0,
     isOpen: false,
     identified: false,
+    overQuota: false,
     ...change,
+  };
+}
+
+/** A line as the thread holds it. */
+function message(
+  id: string,
+  direction: 'in' | 'out',
+  text: string,
+  extra: Partial<ChatMessage> = {},
+): ChatMessage {
+  return {
+    id,
+    direction,
+    at: `2026-11-04T09:00:${String(id.length).padStart(2, '0')}.000Z`,
+    kind: 'text',
+    text,
+    sender: direction === 'in' ? { kind: 'visitor', name: null } : { kind: 'bot', name: null },
+    ...extra,
   };
 }
 
@@ -58,6 +77,7 @@ let view: ViewModule;
 let open: ReturnType<typeof vi.fn>;
 let send: ReturnType<typeof vi.fn>;
 let submitLead: ReturnType<typeof vi.fn>;
+let skipForm: ReturnType<typeof vi.fn>;
 let current: ChatState;
 let listener: ((s: ChatState) => void) | null;
 let handle: ReturnType<ViewModule['mountChat']> | null = null;
@@ -72,6 +92,7 @@ beforeEach(async () => {
   });
   send = vi.fn(async () => true);
   submitLead = vi.fn(async () => true);
+  skipForm = vi.fn(async () => true);
   vi.doMock('../src/chat', async () => {
     const actual = await vi.importActual<ChatModule>('../src/chat');
     return {
@@ -83,6 +104,7 @@ beforeEach(async () => {
       },
       send,
       submitLead,
+      skipForm,
       snapshot: () => current,
       subscribe: (fn: (s: ChatState) => void) => {
         listener = fn;
@@ -241,11 +263,14 @@ describe('mountChat', () => {
     form.dispatchEvent(new Event('submit', { cancelable: true }));
     await settled();
 
-    expect(submitLead).toHaveBeenCalledWith({
-      consent: true,
-      name: 'Lina',
-      email: 'lina@shop.test',
-    });
+    expect(submitLead).toHaveBeenCalledWith(
+      {
+        consent: true,
+        name: 'Lina',
+        email: 'lina@shop.test',
+      },
+      undefined,
+    );
     expect(form.hidden).toBe(true);
   });
 
@@ -267,7 +292,153 @@ describe('mountChat', () => {
 
     expect(root.querySelector<HTMLFormElement>('form.lead')?.hidden).toBe(false);
     expect(root.querySelector<HTMLDivElement>('.composer')?.hidden).toBe(true);
-    expect(root.querySelector('form.lead .skip')).toBeNull();
+    expect(root.querySelector<HTMLButtonElement>('form.lead .skip')?.hidden).toBe(true);
+  });
+
+  it('asks for an address when the organization is out of conversations', () => {
+    const root = mount(state({ isOpen: true, online: false, overQuota: true }));
+
+    expect(root.querySelector<HTMLFormElement>('form.lead')?.hidden).toBe(false);
+    expect(root.querySelector<HTMLDivElement>('.composer')?.hidden).toBe(false);
+  });
+
+  it('offers the welcome buttons under the welcome line until the visitor writes, and sends the one tapped', async () => {
+    const config = {
+      ...CONFIG,
+      welcomeOptions: [
+        { key: 'sales', label: { en: 'Talk to sales', ar: 'المبيعات' } },
+        { key: 'help', label: { en: 'I need help', ar: 'أحتاج مساعدة' } },
+      ],
+    };
+    const root = mount(state({ config, isOpen: true }));
+
+    const chipsOf = () => Array.from(root.querySelectorAll<HTMLButtonElement>('.chip'));
+    expect(chipsOf().map((chip) => chip.textContent)).toEqual(['Talk to sales', 'I need help']);
+    chipsOf()[1]?.click();
+    await settled();
+    expect(send).toHaveBeenCalledWith('I need help', { option: 'help' });
+
+    current = state({ config, isOpen: true, messages: [message('m1', 'in', 'I need help')] });
+    listener?.(current);
+    expect(chipsOf()).toHaveLength(0);
+  });
+
+  it('draws a question with its quick replies, on the last line only, and a tap answers that line', async () => {
+    const question = message('q1', 'out', 'What brings you here?\n\n1. Sales\n2. Support', {
+      kind: 'choices',
+      payload: {
+        options: [
+          { key: 'sales', label: 'Sales' },
+          { key: 'support', label: 'Support' },
+        ],
+      },
+    });
+    const root = mount(state({ isOpen: true, messages: [question] }));
+
+    const bubble = root.querySelectorAll('.bubble')[1];
+    expect(bubble?.querySelector('.body')?.textContent).toBe('What brings you here?');
+    const chips = Array.from(bubble?.querySelectorAll<HTMLButtonElement>('.chip') ?? []);
+    expect(chips.map((chip) => chip.getAttribute('data-option'))).toEqual(['sales', 'support']);
+    chips[1]?.click();
+    await settled();
+    expect(send).toHaveBeenCalledWith('Support', { option: 'support', replyTo: 'q1' });
+
+    current = state({
+      isOpen: true,
+      messages: [question, message('m2', 'in', 'Support', { payload: { option: 'support', replyTo: 'q1' } })],
+    });
+    listener?.(current);
+    expect(root.querySelector('.chip')).toBeNull();
+  });
+
+  it('labels the bot by the name the organization gave it, or as the assistant', () => {
+    const root = mount(state({ isOpen: true, messages: [message('b1', 'out', 'Hello')] }));
+    expect(root.querySelectorAll('.bubble')[1]?.querySelector('.who')?.textContent).toBe('Assistant');
+    handle?.destroy();
+
+    const named = mount(
+      state({
+        config: { ...CONFIG, botName: 'Noor' },
+        isOpen: true,
+        messages: [message('b1', 'out', 'Hello')],
+      }),
+    );
+    expect(named.querySelectorAll('.bubble')[1]?.querySelector('.who')?.textContent).toBe('Noor');
+  });
+
+  it('shows typing dots in place of a bot line not yet due, and the line once it is', () => {
+    const soon = message('b1', 'out', 'One moment', { revealAt: Date.now() + 60_000 });
+    const root = mount(state({ isOpen: true, messages: [soon] }));
+
+    expect(root.querySelector('.typing')).not.toBeNull();
+    expect(root.querySelector('.typing')?.getAttribute('aria-label')).toBe('Typing…');
+    expect(root.querySelector('.log')?.textContent).not.toContain('One moment');
+
+    current = state({ isOpen: true, messages: [{ ...soon, revealAt: Date.now() - 1 }] });
+    listener?.(current);
+    expect(root.querySelector('.typing')).toBeNull();
+    expect(root.querySelector('.log')?.textContent).toContain('One moment');
+  });
+
+  it('links the URLs in a line and draws the link buttons under it, http(s) only', () => {
+    const root = mount(
+      state({
+        isOpen: true,
+        messages: [
+          message('b1', 'out', 'See https://shop.test/faq. Or write <b>here</b>', {
+            payload: {
+              buttons: [
+                { label: 'Open the FAQ', url: 'https://shop.test/faq' },
+                { label: 'Nope', url: 'javascript:alert(1)' },
+              ],
+            },
+          }),
+        ],
+      }),
+    );
+
+    const body = root.querySelectorAll('.bubble')[1]?.querySelector('.body');
+    const inline = body?.querySelector('a');
+    expect(inline?.getAttribute('href')).toBe('https://shop.test/faq');
+    expect(inline?.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(body?.textContent).toBe('See https://shop.test/faq. Or write <b>here</b>');
+    expect(body?.querySelector('b')).toBeNull();
+    const links = Array.from(root.querySelectorAll<HTMLAnchorElement>('.link'));
+    expect(links.map((link) => [link.textContent, link.getAttribute('href')])).toEqual([
+      ['Open the FAQ', 'https://shop.test/faq'],
+    ]);
+  });
+
+  it('shows the form a scenario asks for, with its fields, and answers or skips that request', async () => {
+    const request = message('f1', 'out', 'Where can we reach you?', {
+      kind: 'form',
+      payload: { form: { collectName: false, collectPhone: true, consentText: 'Texts are fine.' } },
+    });
+    const root = mount(state({ isOpen: true, messages: [request] }));
+    const form = root.querySelector<HTMLFormElement>('form.lead');
+    if (!form) throw new Error('no form');
+
+    expect(form.hidden).toBe(false);
+    expect(form.getAttribute('data-request')).toBe('f1');
+    const fieldOf = (name: string) =>
+      form.querySelector(`[name="${name}"]`)?.closest<HTMLLabelElement>('.field');
+    expect(fieldOf('name')?.hidden).toBe(true);
+    expect(fieldOf('phone')?.hidden).toBe(false);
+    expect(form.querySelector('.consent span')?.textContent).toBe('Texts are fine.');
+    expect(root.querySelector('.log')?.textContent).toContain('Where can we reach you?');
+
+    form.querySelector<HTMLInputElement>('[name="phone"]')!.value = '+966501234567';
+    form.dispatchEvent(new Event('submit', { cancelable: true }));
+    await settled();
+    expect(submitLead).toHaveBeenCalledWith({ consent: false, phone: '+966501234567' }, 'f1');
+    expect(form.hidden).toBe(true);
+    handle?.destroy();
+
+    const again = mount(state({ isOpen: true, messages: [request] }));
+    again.querySelector<HTMLButtonElement>('form.lead .skip')?.click();
+    await settled();
+    expect(skipForm).toHaveBeenCalledWith('f1');
+    expect(again.querySelector<HTMLFormElement>('form.lead')?.hidden).toBe(true);
   });
 
   it('shows the unread count on the launcher and the "Powered by" line only when the plan says so', () => {

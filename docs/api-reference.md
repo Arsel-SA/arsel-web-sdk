@@ -202,8 +202,9 @@ openChat(): Promise<void>
 closeChat(): Promise<void>
 ```
 
-Open or close the chat window, for a site's own "Contact us" control. Both resolve without doing
-anything on a page where the organization shows no widget, or before `init()`.
+Open or close the chat window, for a site's own "Contact us" control. `openChat()` waits for the
+widget to finish loading, so it works from a button pressed right after `init()`. Both resolve
+without doing anything on a page where the organization shows no widget, or before `init()`.
 
 ---
 

@@ -3,16 +3,27 @@ import { KEYS, get, set, remove } from './store';
 import { RESULT, getJson, post } from './transport';
 import type { ChatOptions } from './types';
 import type { ChatLocale } from './chat-strings';
+import type {
+  ChatConversation,
+  ChatLead,
+  ChatMessage,
+  ChatMessagePayload,
+  ChatState,
+  ChatWidgetConfig,
+  SendExtra,
+} from './chat-types';
 
 /**
  * The website chat widget's engine: what the organization configured, the
- * visitor's conversation, sending, and the live stream of what the team
- * writes back. Nothing here touches the DOM; `chat-view.ts` draws it.
+ * visitor's conversation, sending, and the live stream of what the team and
+ * its scenarios write back. Nothing here touches the DOM; `chat-view.ts`
+ * draws it.
  *
  * The visitor is the browser's registered device, the same one in-app uses:
- * the first message registers it (no prompt, no permission), and every call
- * that touches the conversation carries the device's proof of possession.
- * A page view costs one small config fetch, cached for a few minutes.
+ * the first message registers it when nothing else has (no prompt, no
+ * permission), and every call that touches the conversation carries the
+ * device's proof of possession. A page view costs one small config fetch,
+ * cached for a few minutes.
  */
 
 const MS_PER_SECOND = 1000;
@@ -22,72 +33,21 @@ const STREAM_RECONNECT_MAX_MS = 30 * MS_PER_SECOND;
 /** After this many failed stream openings the widget polls instead. */
 const STREAM_FAILURES_BEFORE_POLLING = 3;
 const POLL_INTERVAL_MS = 10 * MS_PER_SECOND;
+/** Right after a send, while the stream may not be up yet, replies are fetched this often… */
+const BURST_INTERVAL_MS = 1.5 * MS_PER_SECOND;
+/** …this many times, fifteen seconds in all: a scenario's first answer lands within a second or two. */
+const BURST_TICKS = 10;
 const CATCH_UP_LIMIT = 100;
 const DEVICE_AUTH_HEADER = 'X-Arsel-Device-Auth';
-
-export type ChatPosition = 'right' | 'left';
-export type ChatAskForEmail = 'never' | 'before_human' | 'always';
-
-export interface ChatTexts {
-  welcome: string;
-  placeholder: string;
-  outsideHours: string;
-  offlineForm: string;
-  leadConsent: string;
-}
-
-/** What the server says the widget looks and behaves like. */
-export interface ChatWidgetConfig {
-  name: string;
-  primaryColor: string;
-  position: ChatPosition;
-  language: 'auto' | ChatLocale;
-  askForEmail: ChatAskForEmail;
-  welcomeDelaySeconds: number;
-  collect: { name: boolean; phone: boolean };
-  texts: Record<ChatLocale, ChatTexts>;
-  poweredBy: boolean;
-  online: boolean;
-}
-
-export type ChatSenderKind = 'visitor' | 'agent' | 'bot' | 'system';
-
-export interface ChatMessage {
-  id: string;
-  direction: 'in' | 'out';
-  at: string;
-  kind: string;
-  text: string | null;
-  sender: { kind: ChatSenderKind; name: string | null };
-  /** Set on the visitor's own lines until the server has them. */
-  pending?: 'sending' | 'failed';
-  clientMessageId?: string;
-}
-
-export interface ChatConversation {
-  id: string;
-  status: 'open' | 'resolved';
-  agent: { name: string | null } | null;
-}
-
-export interface ChatState {
-  config: ChatWidgetConfig | null;
-  conversation: ChatConversation | null;
-  messages: ChatMessage[];
-  online: boolean;
-  /** Lines from the team that arrived while the window was closed. */
-  unread: number;
-  isOpen: boolean;
-  /** The visitor gave an email or phone, here or through `identify()`. */
-  identified: boolean;
-}
-
-export interface ChatLead {
-  name?: string;
-  email?: string;
-  phone?: string;
-  consent: boolean;
-}
+/** The server refuses a conversation the organization has no allowance left for. */
+const HTTP_CONFLICT = 409;
+const SECONDS_ON_PAGE_MAX = 24 * 60 * 60;
+/** A bot's line is revealed after a pause that reads as typing: this long, plus a little per character. */
+const TYPING_BASE_MS = 500;
+const TYPING_PER_CHARACTER_MS = 12;
+const TYPING_MAX_MS = 1800;
+/** Only a line that just arrived is paced; history and catch-up after a long gap show at once. */
+const PACED_LINE_MAX_AGE_MS = 30 * MS_PER_SECOND;
 
 interface CachedConfig {
   fetchedAtMs: number;
@@ -119,11 +79,18 @@ let state: ChatState = emptyState();
 let options: Required<ChatOptions> | null = null;
 let debug = false;
 let started = false;
+let starting: Promise<void> | null = null;
+let openedAtMs = 0;
 const listeners = new Set<Listener>();
 let stream: EventSource | null = null;
+let streamLive = false;
 let streamFailures = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+let burstTimer: ReturnType<typeof setTimeout> | null = null;
+let burstTicksLeft = 0;
+let revealTimer: ReturnType<typeof setTimeout> | null = null;
+let lastRevealAtMs = 0;
 let renderer: ((state: ChatState) => void) | null = null;
 
 function emptyState(): ChatState {
@@ -135,6 +102,7 @@ function emptyState(): ChatState {
     unread: 0,
     isOpen: false,
     identified: false,
+    overQuota: false,
   };
 }
 
@@ -171,13 +139,21 @@ export function snapshot(): ChatState {
  * when the organization shows one. A 404 is the ordinary case for an
  * organization without the widget and is remembered for a while.
  */
-export async function start(
+export function start(
   chatOptions: Required<ChatOptions>,
   debugEnabled: boolean,
 ): Promise<void> {
   options = chatOptions;
   debug = debugEnabled;
   started = true;
+  openedAtMs = Date.now();
+  starting = load().finally(() => {
+    starting = null;
+  });
+  return starting;
+}
+
+async function load(): Promise<void> {
   const config = await loadConfig();
   if (!config) {
     log('no widget for this organization');
@@ -194,8 +170,9 @@ export async function start(
   }
 }
 
-/** The visitor opened the window: show the thread, mark it read. */
+/** The visitor opened the window: show the thread, mark it read. Waits for a start still loading. */
 export async function open(): Promise<void> {
+  if (starting) await starting.catch(() => undefined);
   if (!state.config) return;
   publish({ isOpen: true, unread: 0 });
   if (!state.conversation && (await get<string>(KEYS.deviceSecret))) {
@@ -223,14 +200,24 @@ export async function onReset(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
- * Sends the visitor's line. It appears at once as pending, then as the
- * server stored it; a failure leaves it marked so the visitor can retry
- * with the same id, which the server takes once.
+ * Sends the visitor's line: typed, or the quick reply or welcome button
+ * they tapped. It appears at once as pending, then as the server stored it;
+ * a failure leaves it marked so the visitor can retry with the same id,
+ * which the server takes once. When the organization is out of
+ * conversations the line is dropped, the outside-hours notice shows and the
+ * form takes the lead instead.
  */
-export async function send(text: string, retryOf?: string): Promise<boolean> {
+export async function send(text: string, extra: SendExtra = {}): Promise<boolean> {
   const body = text.trim();
   if (!state.config || !body) return false;
-  const clientMessageId = retryOf ?? crypto.randomUUID();
+  const clientMessageId = extra.retryOf ?? crypto.randomUUID();
+  const tapped: ChatMessagePayload | null =
+    extra.option || extra.replyTo
+      ? {
+          ...(extra.option ? { option: extra.option } : {}),
+          ...(extra.replyTo ? { replyTo: extra.replyTo } : {}),
+        }
+      : null;
   const pending: ChatMessage = {
     id: `pending:${clientMessageId}`,
     direction: 'in',
@@ -238,15 +225,11 @@ export async function send(text: string, retryOf?: string): Promise<boolean> {
     kind: 'text',
     text: body,
     sender: { kind: 'visitor', name: null },
+    payload: tapped,
     pending: 'sending',
     clientMessageId,
   };
-  publish({
-    messages: [
-      ...state.messages.filter((m) => m.clientMessageId !== clientMessageId),
-      pending,
-    ],
-  });
+  publish({ messages: [...withoutClientId(state.messages, clientMessageId), pending] });
 
   const device = await ensureDevice();
   if (!device) return fail(clientMessageId);
@@ -257,12 +240,16 @@ export async function send(text: string, retryOf?: string): Promise<boolean> {
       installationId: device.installationId,
       clientMessageId,
       text: body,
+      ...(extra.option ? { option: extra.option } : {}),
+      ...(extra.replyTo ? { replyTo: extra.replyTo } : {}),
       locale: readLocale(),
       page: readPage(),
+      secondsOnPage: secondsOnPage(),
     },
     { [DEVICE_AUTH_HEADER]: device.deviceSecret },
     true,
   );
+  if (response.code === HTTP_CONFLICT) return overQuota(clientMessageId);
   if (response.result !== RESULT.success || !response.body) {
     log(`send failed with ${response.code}`);
     return fail(clientMessageId);
@@ -272,22 +259,28 @@ export async function send(text: string, retryOf?: string): Promise<boolean> {
   publish({
     conversation,
     online,
-    messages: mergeLines(
-      state.messages.filter((m) => m.clientMessageId !== clientMessageId),
-      [{ ...sent, clientMessageId }, ...(reply ? [reply] : [])],
-    ),
+    messages: mergeLines(withoutClientId(state.messages, clientMessageId), [
+      // The tap stays on the line even where the server echoes none.
+      { ...sent, clientMessageId, payload: sent.payload ?? tapped },
+      ...(reply ? [paced(reply)] : []),
+    ]),
   });
   if (!hadConversation) connectStream();
+  startBurst();
   return true;
 }
 
-export async function submitLead(lead: ChatLead): Promise<boolean> {
+/**
+ * The visitor filled the form: the offline or lead form the widget shows
+ * on its own, or the one a scenario asked for, named by `requestId`.
+ */
+export async function submitLead(lead: ChatLead, requestId?: string): Promise<boolean> {
   const device = await ensureDevice();
   if (!device) return false;
   const response = await post<{ identified: boolean }>(
     device.baseUrl,
     `${chatPath(device.clientKey)}/leads`,
-    { installationId: device.installationId, ...lead },
+    { installationId: device.installationId, ...lead, ...(requestId ? { requestId } : {}) },
     { [DEVICE_AUTH_HEADER]: device.deviceSecret },
     true,
   );
@@ -295,6 +288,23 @@ export async function submitLead(lead: ChatLead): Promise<boolean> {
   if (lead.email) await set(KEYS.email, lead.email);
   if (lead.phone) await set(KEYS.phoneNumber, lead.phone);
   publish({ identified: true });
+  if (requestId) startBurst();
+  return true;
+}
+
+/** The visitor skipped the form a scenario asked for: the scenario moves on. */
+export async function skipForm(requestId: string): Promise<boolean> {
+  const device = await readDevice();
+  if (!device) return false;
+  const response = await post(
+    device.baseUrl,
+    `${chatPath(device.clientKey)}/leads`,
+    { installationId: device.installationId, requestId, skipped: true, consent: false },
+    { [DEVICE_AUTH_HEADER]: device.deviceSecret },
+    true,
+  );
+  if (response.result !== RESULT.success) return false;
+  startBurst();
   return true;
 }
 
@@ -303,6 +313,30 @@ function fail(clientMessageId: string): boolean {
     messages: state.messages.map((m) =>
       m.clientMessageId === clientMessageId ? { ...m, pending: 'failed' } : m,
     ),
+  });
+  return false;
+}
+
+/**
+ * No conversation can open: the line goes, the outside-hours notice shows
+ * once, and the team is drawn as away so the form asks for an address the
+ * team can answer later.
+ */
+function overQuota(clientMessageId: string): boolean {
+  log('the organization is out of conversations');
+  const config = state.config;
+  const notice: ChatMessage = {
+    id: 'local:over-quota',
+    direction: 'out',
+    at: new Date().toISOString(),
+    kind: 'notice',
+    text: config ? config.texts[resolveLocale(config)].outsideHours : null,
+    sender: { kind: 'system', name: null },
+  };
+  publish({
+    online: false,
+    overQuota: true,
+    messages: mergeLines(withoutClientId(state.messages, clientMessageId), [notice]),
   });
   return false;
 }
@@ -357,6 +391,7 @@ async function openStream(): Promise<void> {
   stream = source;
   source.onopen = () => {
     streamFailures = 0;
+    streamLive = true;
     stopPolling();
     void catchUp();
   };
@@ -371,6 +406,7 @@ async function openStream(): Promise<void> {
     if (stream !== source) return;
     source.close();
     stream = null;
+    streamLive = false;
     streamFailures += 1;
     scheduleReconnect();
   };
@@ -399,7 +435,7 @@ function receive(message: ChatMessage): void {
   if (state.messages.some((m) => m.id === message.id)) return;
   const fromTeam = message.direction === 'out';
   publish({
-    messages: mergeLines(state.messages, [message]),
+    messages: mergeLines(state.messages, [paced(message)]),
     unread: state.unread + (fromTeam && !state.isOpen ? 1 : 0),
   });
 }
@@ -407,7 +443,7 @@ function receive(message: ChatMessage): void {
 async function catchUp(): Promise<void> {
   const device = await readDevice();
   if (!device || !state.conversation) return;
-  const last = [...state.messages].reverse().find((m) => !m.pending);
+  const last = [...state.messages].reverse().find((m) => !m.pending && !isLocal(m));
   const query = new URLSearchParams({
     installationId: device.installationId,
     limit: String(CATCH_UP_LIMIT),
@@ -451,18 +487,91 @@ function stopPolling(): void {
   pollTimer = null;
 }
 
+/**
+ * The seconds after a send, when a scenario answers: without a live stream
+ * the widget fetches the thread every second and a half for a while, so
+ * the answer does not wait for the next ten-second poll.
+ */
+function startBurst(): void {
+  burstTicksLeft = BURST_TICKS;
+  if (burstTimer) return;
+  burstTimer = setTimeout(burstTick, BURST_INTERVAL_MS);
+}
+
+function burstTick(): void {
+  burstTimer = null;
+  if (!started || !state.conversation) return;
+  burstTicksLeft -= 1;
+  if (!streamLive) void catchUp();
+  if (burstTicksLeft > 0) burstTimer = setTimeout(burstTick, BURST_INTERVAL_MS);
+}
+
+function stopBurst(): void {
+  if (burstTimer) clearTimeout(burstTimer);
+  burstTimer = null;
+  burstTicksLeft = 0;
+}
+
 function disconnectStream(): void {
   stream?.close();
   stream = null;
+  streamLive = false;
   if (reconnectTimer) clearTimeout(reconnectTimer);
   reconnectTimer = null;
   stopPolling();
+  stopBurst();
 }
 
 /** For tests and `pagehide`: nothing stays open. */
 export function stop(): void {
   disconnectStream();
+  if (revealTimer) clearTimeout(revealTimer);
+  revealTimer = null;
   started = false;
+}
+
+// ---------------------------------------------------------------------------
+// Pacing
+// ---------------------------------------------------------------------------
+
+/**
+ * A bot's line that just arrived is revealed after a pause that reads as
+ * typing, one line after another; the view draws the dots meanwhile. A
+ * teammate's line, a notice and anything older show at once.
+ */
+function paced(message: ChatMessage): ChatMessage {
+  if (message.direction !== 'out' || message.sender.kind !== 'bot') return message;
+  if (message.kind === 'notice') return message;
+  const now = Date.now();
+  const arrivedAt = Date.parse(message.at);
+  if (Number.isFinite(arrivedAt) && now - arrivedAt > PACED_LINE_MAX_AGE_MS) return message;
+  const typingMs = Math.min(
+    TYPING_BASE_MS + (message.text?.length ?? 0) * TYPING_PER_CHARACTER_MS,
+    TYPING_MAX_MS,
+  );
+  const revealAt = Math.max(now, lastRevealAtMs) + typingMs;
+  lastRevealAtMs = revealAt;
+  scheduleReveal(revealAt);
+  return { ...message, revealAt };
+}
+
+/** Redraws when the next hidden line is due; one timer, for the earliest reveal. */
+function scheduleReveal(revealAt: number): void {
+  const due = state.messages
+    .map((m) => m.revealAt ?? 0)
+    .filter((at) => at > Date.now())
+    .concat(revealAt);
+  const next = Math.min(...due);
+  if (revealTimer) clearTimeout(revealTimer);
+  revealTimer = setTimeout(
+    () => {
+      revealTimer = null;
+      publish({});
+      const pending = state.messages.some((m) => (m.revealAt ?? 0) > Date.now());
+      if (pending) scheduleReveal(Infinity);
+    },
+    Math.max(0, next - Date.now()),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -487,7 +596,7 @@ async function readDevice(): Promise<Device | null> {
   return { clientKey, baseUrl, installationId, deviceSecret };
 }
 
-/** Registers the browser on first use: the moment the visitor writes, never on page load. */
+/** Registers the browser on first use, when in-app has not done it: the moment the visitor writes. */
 async function ensureDevice(): Promise<Device | null> {
   const existing = await readDevice();
   if (existing) return existing;
@@ -528,11 +637,26 @@ function pendingLines(): ChatMessage[] {
   return state.messages.filter((m) => m.pending);
 }
 
+/** A line the widget wrote itself, which the server never had. */
+function isLocal(message: ChatMessage): boolean {
+  return message.id.startsWith('local:');
+}
+
+function withoutClientId(lines: ChatMessage[], clientMessageId: string): ChatMessage[] {
+  return lines.filter((m) => m.clientMessageId !== clientMessageId);
+}
+
 /** Lines in order, each once: a pending line gives way to its stored self. */
 function mergeLines(base: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
   const byId = new Map(base.map((m) => [m.id, m]));
   for (const line of incoming) byId.set(line.id, line);
   return [...byId.values()].sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id));
+}
+
+/** How long the visitor has had this page open, whole seconds, capped at a day. */
+function secondsOnPage(): number {
+  const seconds = Math.floor((Date.now() - openedAtMs) / MS_PER_SECOND);
+  return Math.max(0, Math.min(seconds, SECONDS_ON_PAGE_MAX));
 }
 
 /** The language the widget runs in: pinned by the organization, else the page's. */

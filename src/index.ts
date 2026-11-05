@@ -7,6 +7,7 @@ import {
   resetRetryPacing,
 } from './events';
 import * as chat from './chat';
+import type { ChatState } from './chat-types';
 import { mountChat } from './chat-view';
 import * as inapp from './inapp';
 import { render } from './inapp-view';
@@ -221,8 +222,8 @@ export function init(config: ArselConfig): Promise<void> {
     }
 
     // The chat widget: one small config fetch, and nothing drawn unless the
-    // organization switched it on. The browser is registered when the visitor
-    // first writes, never here.
+    // organization switched it on. It registers the browser only when the
+    // visitor first writes, and only if in-app has not done so above.
     const chatOptions = resolveChatOptions(config.chat);
     if (chatOptions) {
       chat.setRenderer(makeChatRenderer(chatOptions));
@@ -618,7 +619,7 @@ function resolveChatOptions(
  */
 function makeChatRenderer(
   options: Required<ChatOptions>,
-): (state: chat.ChatState) => void {
+): (state: ChatState) => void {
   let mounted = false;
   return (state) => {
     if (mounted || !state.config) return;

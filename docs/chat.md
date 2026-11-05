@@ -47,14 +47,38 @@ await Arsel.init({
   dashboard pins a language.
 - "Powered by Arsel" unless the organization's plan carries custom branding.
 
+## Scenarios
+
+The scenarios your organization builds under **Chat → Scenarios** answer in the widget before, or
+instead of, a teammate:
+
+- **Welcome buttons.** Up to five buttons under the welcome line, set under Chat → Widget. A tap
+  sends the button's label and starts the scenario its key names. They go once the visitor has
+  written.
+- **Questions.** A scenario's question shows its answers as quick replies under the line. A tap
+  sends the answer; typing it, or its number, works too. The replies go with the visitor's next
+  line.
+- **Links.** A line may carry up to three link buttons, and any `http(s)` URL in a line is a link.
+  Both open in a new tab with `rel="noopener noreferrer"`.
+- **Forms.** "Collect contact details" asks for the widget's form inline: the email, and the name or
+  phone the step asks for. *Continue* submits it, and the visitor becomes a contact as with the
+  offline form; *Skip* tells the scenario to move on. An email or phone typed instead of the form
+  answers it too.
+- **The bot's name.** Lines a scenario writes are labelled with the bot name set under Chat →
+  Widget, or "Assistant" ("المساعد"). Each appears after a short typing pause.
+- **Handing over.** When a scenario hands the visitor to the team, the thread goes on with the
+  teammates. Outside office hours the widget shows the outside-hours text and, when the step asks
+  for it, the form.
+
 Everything renders in a closed shadow root on a host element the SDK appends to `<body>`: your
 CSS cannot reach it and its CSS cannot reach your page. Text is set as text, never as markup.
 
 ## Identity
 
-The visitor is this browser. The first message registers the browser with the organization (the
-same registration in-app messaging uses: no permission prompt, nothing shown) and from then on the
-thread follows it: a returning visitor sees their conversation and the team's replies land in it.
+The visitor is this browser. The browser is registered with the organization on the visitor's
+first message, unless in-app messaging already registered it on page load (it is the same
+registration: no permission prompt, nothing shown). From then on the thread follows it: a
+returning visitor sees their conversation and the team's replies land in it.
 
 A visitor who gives an email or phone in the form, or whom your site identifies with
 [`identify()`](identity.md), becomes that contact: the conversation and its history move to the
@@ -67,7 +91,8 @@ on the browser.
 document.querySelector('#contact-us').addEventListener('click', () => Arsel.openChat());
 ```
 
-`openChat()` and `closeChat()` do nothing on a page without a widget.
+`openChat()` waits for the widget to load, so a button pressed right after `init()` opens it. Both
+do nothing on a page without a widget.
 
 ## Network calls
 
@@ -85,13 +110,14 @@ All under your `baseUrl`, beside the push and events calls in the
 | `POST /api/v1/orgs/{clientKey}/chat/leads` | `X-Arsel-Device-Auth` |
 
 Replies arrive over a server-sent events stream. Where `EventSource` is unavailable, or the stream
-keeps failing, the widget polls for new lines every ten seconds instead. CSP:
-`connect-src https://api.arsel.sa;` covers both.
+keeps failing, the widget polls for new lines every ten seconds instead, and every second and a
+half for the fifteen seconds after each line the visitor sends, so a scenario's answer still lands
+at once. CSP: `connect-src https://api.arsel.sa;` covers both.
 
 ## Troubleshooting
 
 | Symptom | Cause |
 | --- | --- |
 | No launcher | The widget is off in the dashboard, the page's origin is not on the allowed list, or `chat: false` was passed. `diagnostics()` shows the last response code and path. |
-| Launcher, but sending fails | The origin was removed from the list after the page loaded, or the organization is over its monthly conversation allowance (the server answers `409 quota_exceeded`; the widget shows the offline form). |
+| Launcher, but sending fails | The origin was removed from the list after the page loaded, or the organization is over its monthly conversation allowance: the server answers `409 quota_exceeded`, the widget drops the line, shows the outside-hours text and asks for an address the team can answer later. |
 | Replies arrive late | The stream could not open and the widget is polling. Check that your proxy does not buffer `text/event-stream` responses. |

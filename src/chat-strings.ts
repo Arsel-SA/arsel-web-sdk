@@ -22,6 +22,9 @@ export interface ChatStrings {
   retry: string;
   you: string;
   team: string;
+  /** The scenarios' lines, when the organization gave the bot no name. */
+  bot: string;
+  typing: string;
   invalidEmail: string;
   invalidPhone: string;
 }
@@ -44,6 +47,8 @@ export const CHAT_STRINGS: Readonly<Record<ChatLocale, ChatStrings>> = Object.fr
     retry: 'Retry',
     you: 'You',
     team: 'Team',
+    bot: 'Assistant',
+    typing: 'Typing…',
     invalidEmail: 'Enter a valid email address.',
     invalidPhone: 'Enter a phone number with the country code, e.g. +966501234567.',
   }),
@@ -64,6 +69,8 @@ export const CHAT_STRINGS: Readonly<Record<ChatLocale, ChatStrings>> = Object.fr
     retry: 'أعد المحاولة',
     you: 'أنت',
     team: 'الفريق',
+    bot: 'المساعد',
+    typing: 'يكتب…',
     invalidEmail: 'أدخل بريداً إلكترونياً صحيحاً.',
     invalidPhone: 'أدخل رقم الجوال مع رمز الدولة، مثل +966501234567.',
   }),

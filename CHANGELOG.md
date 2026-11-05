@@ -15,9 +15,22 @@ Breaking changes to the public surface wait for a major release, and are listed 
   events (polling where a stream cannot open), the outside-hours notice and the offline form,
   and the "Powered by Arsel" line the plan decides. On by default, `chat: false` keeps it off a
   page, `chat: { zIndex }` tunes the layer, and `openChat()` / `closeChat()` drive it from the
-  site's own controls. The browser is registered on the visitor's first message, never on page
-  load, and the thread follows the contact once the visitor identifies. One small config request
-  per page view, cached for five minutes, is the whole cost on a site without the widget.
+  site's own controls (`openChat()` waits for the widget to load, so it works right after
+  `init()`). The widget registers the browser on the visitor's first message, unless in-app
+  messaging already did on page load, and the thread follows the contact once the visitor
+  identifies. One small config request per page view, cached for five minutes, is the whole cost
+  on a site without the widget. When the organization is out of conversations (`409
+  quota_exceeded`) the line is dropped, the outside-hours text shows and the form asks for an
+  address.
+- **Chat scenarios in the widget.** What the scenarios built under Chat → Scenarios send: welcome
+  buttons under the welcome line, a question's quick replies under its line (a tap sends the
+  answer with its key and the line it answers; typing works too), link buttons and clickable URLs
+  (new tab, `rel="noopener noreferrer"`), and the contact form a scenario asks for, shown inline
+  with the fields it wants and a *Skip* that lets the scenario move on. Lines a scenario writes
+  carry the bot name set in the dashboard, or "Assistant", and each appears after a short typing
+  pause. Every line the visitor sends carries how long they had been on the page, for the
+  scenarios' targeting. Without a live stream the widget fetches the thread every second and a
+  half for fifteen seconds after each send, so an answer does not wait for the ten-second poll.
 
 ## [1.3.1] — 2026-11-04
 

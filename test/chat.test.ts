@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ChatState, ChatWidgetConfig } from '../src/chat';
+import type { ChatState, ChatWidgetConfig } from '../src/chat-types';
 
 type ChatModule = typeof import('../src/chat');
 type StoreModule = typeof import('../src/store');
@@ -114,9 +114,21 @@ async function drained(): Promise<void> {
   }
 }
 
-/** Only the clocks the widget uses: the fake IndexedDB schedules its own work on setImmediate. */
-function useTimers(): void {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+/**
+ * Only the clocks the widget uses: the fake IndexedDB schedules its own work
+ * on setImmediate. The pacing reads the wall clock, so a test of it fakes
+ * `Date` too.
+ */
+function useTimers(withDate = false): void {
+  vi.useFakeTimers({
+    toFake: [
+      'setTimeout',
+      'clearTimeout',
+      'setInterval',
+      'clearInterval',
+      ...(withDate ? (['Date'] as const) : []),
+    ],
+  });
 }
 
 describe('start()', () => {
@@ -242,7 +254,7 @@ describe('send()', () => {
     expect(failed.pending).toBe('failed');
 
     respond = base;
-    expect(await chat.send('Hello', failed.clientMessageId)).toBe(true);
+    expect(await chat.send('Hello', { retryOf: failed.clientMessageId })).toBe(true);
 
     expect(sends().map((c) => (c.body as { clientMessageId: string }).clientMessageId)).toEqual([
       failed.clientMessageId,
@@ -251,19 +263,125 @@ describe('send()', () => {
     expect(chat.snapshot().messages.filter((m) => m.pending)).toHaveLength(0);
   });
 
-  it('polls for replies after the first message when the browser has no EventSource', async () => {
+  it('sends a tapped quick reply with its key, the line it answers, and the time on the page', async () => {
+    await chat.start(OPTIONS, false);
+
+    expect(await chat.send('Support', { option: 'support', replyTo: 'q1' })).toBe(true);
+
+    expect(sends()[0].body).toMatchObject({
+      text: 'Support',
+      option: 'support',
+      replyTo: 'q1',
+      secondsOnPage: expect.any(Number),
+    });
+    const [sent] = chat.snapshot().messages;
+    expect(sent.payload).toEqual({ option: 'support', replyTo: 'q1' });
+  });
+
+  it('polls for replies when the browser has no EventSource: every second and a half right after a send, every ten seconds after that', async () => {
     useTimers();
     await chat.start(OPTIONS, false);
     await chat.send('Hello');
     const polled = () => calls.filter((c) => c.path.startsWith(`${WIDGET_PATH}/messages?`));
     expect(tickets()).toHaveLength(0);
 
-    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(1_500);
     await drained();
-
     expect(polled()).toHaveLength(1);
     // The notice came after the visitor's line, so the catch-up starts from it.
     expect(polled()[0].path).toContain('after=notice-1');
+
+    await vi.advanceTimersByTimeAsync(13_500);
+    await drained();
+    // Ten quick fetches over fifteen seconds, plus the ten-second poll at ten
+    // when the fake IndexedDB has let it through.
+    const burst = polled().length;
+    expect(burst).toBeGreaterThanOrEqual(10);
+    expect(burst).toBeLessThanOrEqual(11);
+
+    // The burst is over: the ten-second poll alone goes on (covered below).
+    await vi.advanceTimersByTimeAsync(20_000);
+    await drained();
+    expect(polled().length - burst).toBeLessThanOrEqual(2);
+    chat.stop();
+  });
+
+  it('drops the line, shows the outside-hours notice and draws the team away when the organization is out of conversations', async () => {
+    await chat.start(OPTIONS, false);
+    const base = respond;
+    respond = (call) =>
+      call.path === `${WIDGET_PATH}/messages` && call.method === 'POST'
+        ? { status: 409, body: { statusCode: 409, message: 'quota_exceeded' } }
+        : base(call);
+
+    expect(await chat.send('Hello')).toBe(false);
+
+    const state = chat.snapshot();
+    expect(state.overQuota).toBe(true);
+    expect(state.online).toBe(false);
+    expect(state.messages.map((m) => [m.kind, m.text, m.sender.kind])).toEqual([
+      ['notice', 'Away.', 'system'],
+    ]);
+  });
+
+  it('reveals a line the bot just wrote after a typing pause, and redraws when it is due', async () => {
+    useTimers(true);
+    const drawn = vi.fn<(state: ChatState) => void>();
+    chat.setRenderer(drawn);
+    const base = respond;
+    respond = (call) => {
+      if (call.path === `${WIDGET_PATH}/messages` && call.method === 'POST') {
+        const body = call.body as { clientMessageId: string; text: string };
+        return {
+          status: 200,
+          body: {
+            sent: line('m-' + body.clientMessageId, 'in', body.text),
+            conversation: { id: 'conv-1', status: 'open', agent: null },
+            online: true,
+            reply: { ...line('b1', 'out', 'Welcome! Pick one.', 'choices', 'bot'), at: new Date().toISOString() },
+          },
+        };
+      }
+      return base(call);
+    };
+    await chat.start(OPTIONS, false);
+
+    await chat.send('Hello');
+
+    const reply = chat.snapshot().messages.find((m) => m.id === 'b1');
+    expect(reply?.revealAt).toBeGreaterThan(Date.now());
+    expect(reply?.revealAt).toBeLessThanOrEqual(Date.now() + 1_800);
+    const before = drawn.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(1_800);
+    expect(drawn.mock.calls.length).toBeGreaterThan(before);
+    expect(reply?.revealAt).toBeLessThanOrEqual(Date.now());
+    chat.stop();
+  });
+
+  it('shows a line a teammate wrote, and an old line of the bot, at once', async () => {
+    const base = respond;
+    respond = (call) =>
+      call.path.startsWith(`${WIDGET_PATH}/messages?`)
+        ? {
+            status: 200,
+            body: {
+              data: [
+                { ...line('a1', 'out', 'Hi, Lina here', 'text', 'agent'), at: new Date().toISOString() },
+                line('b0', 'out', 'An hour ago', 'text', 'bot'),
+              ],
+            },
+          }
+        : base(call);
+    useTimers();
+    await chat.start(OPTIONS, false);
+    await chat.send('Hello');
+
+    await vi.advanceTimersByTimeAsync(1_500);
+    await drained();
+
+    const revealed = chat.snapshot().messages.filter((m) => m.id === 'a1' || m.id === 'b0');
+    expect(revealed).toHaveLength(2);
+    expect(revealed.every((m) => m.revealAt === undefined)).toBe(true);
     chat.stop();
   });
 
@@ -312,6 +430,42 @@ describe('submitLead()', () => {
     expect(await store.get(store.KEYS.email)).toBe('lina@shop.test');
     expect(chat.snapshot().identified).toBe(true);
   });
+
+  it('names the form request a lead answers, and the one the visitor skipped', async () => {
+    await store.set(store.KEYS.installationId, 'inst-1');
+    await store.set(store.KEYS.deviceSecret, 'secret-1');
+    respond = (call) => {
+      if (call.path === `${WIDGET_PATH}/config`) return { status: 200, body: CONFIG };
+      if (call.path === `${WIDGET_PATH}/sessions`) {
+        return { status: 200, body: { online: true, conversation: null, messages: [] } };
+      }
+      if (call.path === `${WIDGET_PATH}/leads`) return { status: 200, body: { identified: true } };
+      return undefined;
+    };
+    await chat.start(OPTIONS, false);
+
+    expect(await chat.submitLead({ phone: '+966501234567', consent: false }, 'f1')).toBe(true);
+    expect(await chat.skipForm('f2')).toBe(true);
+
+    const leads = calls.filter((c) => c.path === `${WIDGET_PATH}/leads`).map((c) => c.body);
+    expect(leads).toEqual([
+      { installationId: 'inst-1', phone: '+966501234567', consent: false, requestId: 'f1' },
+      { installationId: 'inst-1', requestId: 'f2', skipped: true, consent: false },
+    ]);
+  });
+});
+
+describe('open()', () => {
+  it('waits for a start still loading, so a site button pressed right after init opens the window', async () => {
+    respond = (call) =>
+      call.path === `${WIDGET_PATH}/config` ? { status: 200, body: CONFIG } : undefined;
+
+    const starting = chat.start(OPTIONS, false);
+    await chat.open();
+
+    expect(chat.snapshot().isOpen).toBe(true);
+    await starting;
+  });
 });
 
 describe('resolveLocale()', () => {
@@ -323,18 +477,20 @@ describe('resolveLocale()', () => {
   });
 });
 
+/** A line as the server sends it, dated earlier today so nothing paces it unless a test says so. */
 function line(
   id: string,
   direction: 'in' | 'out',
   text: string,
   kind = 'text',
+  sender: ChatState['messages'][number]['sender']['kind'] = direction === 'in' ? 'visitor' : 'system',
 ): ChatState['messages'][number] {
   return {
     id,
     direction,
-    at: `2026-11-04T09:00:0${id.length % 10}.000Z`,
+    at: `2026-11-04T00:00:0${id.length % 10}.000Z`,
     kind,
     text,
-    sender: direction === 'in' ? { kind: 'visitor', name: null } : { kind: 'system', name: null },
+    sender: { kind: sender, name: sender === 'agent' ? 'Lina' : null },
   };
 }
