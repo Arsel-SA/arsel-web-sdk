@@ -46,6 +46,24 @@ await Arsel.init({
 - Arabic or English, right to left or left to right, following the page's `lang` unless the
   dashboard pins a language.
 - "Powered by Arsel" unless the organization's plan carries custom branding.
+- **Typing and "Seen".** While a teammate writes, dots show under their first name. Once a
+  teammate opens the conversation, the visitor's last line they read shows "Seen". The team sees
+  the visitor typing in turn, and how far the visitor read.
+- **Files.** Where Chat → Widget lets visitors send files, a paperclip beside the composer sends
+  an image (JPEG, PNG, WebP, GIF) or a PDF, up to 10 MB. Images show in the thread; a PDF shows as
+  a link that saves it. Teammates can send files the same way. Links to files last an hour; an
+  image whose link ran out asks for a fresh one.
+- **Rating.** When a teammate resolves a conversation they answered, the thread asks the visitor
+  to rate it, from 1 to 5, with an optional comment. Switched off under Chat → Widget.
+- **Proactive messages.** Messages set under Chat → Widget that show before the visitor writes:
+  after some seconds on the page, or as the pointer leaves the page on a computer (exit intent),
+  on every page or those whose address contains a given text, whatever the team's availability or
+  only while it is in or away. Each shows as a teaser above the launcher, which the visitor can
+  dismiss, or opens the window on it. One shows per page view at most, never while the visitor is
+  chatting, and the same one no more than once a day, a week or a month on a browser, as set.
+  When the visitor answers, the message is the conversation's first line in the team's inbox.
+  All of this is decided in the browser from the cached config: proactive messages cost no
+  request.
 
 ## Scenarios
 
@@ -108,11 +126,18 @@ All under your `baseUrl`, beside the push and events calls in the
 | `POST /api/v1/orgs/{clientKey}/chat/stream-ticket` | `X-Arsel-Device-Auth` |
 | `GET /api/v1/orgs/{clientKey}/chat/stream?ticket=…` | single-use ticket (server-sent events) |
 | `POST /api/v1/orgs/{clientKey}/chat/leads` | `X-Arsel-Device-Auth` |
+| `POST /api/v1/orgs/{clientKey}/chat/typing` | `X-Arsel-Device-Auth` (at most every three seconds while typing) |
+| `POST /api/v1/orgs/{clientKey}/chat/read` | `X-Arsel-Device-Auth` |
+| `POST /api/v1/orgs/{clientKey}/chat/attachments?installationId=…` | `X-Arsel-Device-Auth` (multipart upload) |
+| `GET /api/v1/orgs/{clientKey}/chat/attachment?installationId=…&id=…` | `X-Arsel-Device-Auth` (a fresh file link) |
+| `POST /api/v1/orgs/{clientKey}/chat/ratings` | `X-Arsel-Device-Auth` |
 
 Replies arrive over a server-sent events stream. Where `EventSource` is unavailable, or the stream
 keeps failing, the widget polls for new lines every ten seconds instead, and every second and a
 half for the fifteen seconds after each line the visitor sends, so a scenario's answer still lands
-at once. CSP: `connect-src https://api.arsel.sa;` covers both.
+at once. CSP: `connect-src https://api.arsel.sa;` covers both. Files load from the organization's
+storage through signed links, so a page with a strict CSP also needs that storage host in
+`img-src` for images to show in the thread.
 
 ## Troubleshooting
 
@@ -121,3 +146,5 @@ at once. CSP: `connect-src https://api.arsel.sa;` covers both.
 | No launcher | The widget is off in the dashboard, the page's origin is not on the allowed list, or `chat: false` was passed. `diagnostics()` shows the last response code and path. |
 | Launcher, but sending fails | The origin was removed from the list after the page loaded, or the organization is over its monthly conversation allowance: the server answers `409 quota_exceeded`, the widget drops the line, shows the outside-hours text and asks for an address the team can answer later. |
 | Replies arrive late | The stream could not open and the widget is polling. Check that your proxy does not buffer `text/event-stream` responses. |
+| No paperclip | Files are off under Chat → Widget. A file the widget refuses says why under the composer: too big, not an image or a PDF, or too many this hour (20). |
+| A proactive message never shows | It shows once per its days on a browser: a test browser that saw it already will not see it again until then. The address condition is a plain "contains", and exit intent needs a mouse or trackpad. |

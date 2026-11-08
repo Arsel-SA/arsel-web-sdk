@@ -31,6 +31,17 @@ Breaking changes to the public surface wait for a major release, and are listed 
   pause. Every line the visitor sends carries how long they had been on the page, for the
   scenarios' targeting. Without a live stream the widget fetches the thread every second and a
   half for fifteen seconds after each send, so an answer does not wait for the ten-second poll.
+- **The team's inbox, felt in the widget.** Dots under a teammate's first name while they write,
+  and "Seen" under the visitor's last line a teammate read; the team sees the visitor typing (a
+  signal at most every three seconds, never the text) and how far they read. Files, where the
+  organization allows them: a paperclip sends an image or a PDF up to 10 MB, images show in the
+  thread and a PDF as a link, and an image whose hour-long link ran out asks for a fresh one; a
+  file the widget refuses says why. A resolved conversation asks for a rating, five faces and an
+  optional comment. Proactive messages set in the dashboard: after some seconds on the page or on
+  exit intent, on pages whose address contains a text, by the team's availability, as a teaser the
+  visitor can dismiss or the window opened on it, at most once a day, week or month per browser,
+  all judged in the browser from the cached config; the visitor's answer makes it the
+  conversation's first line for the team.
 
 ## [1.3.1] — 2026-11-04
 
@@ -38,6 +49,12 @@ If you copied `arsel-sw.js` into your web root, copy it again: updating the pack
 refresh a copied file.
 
 ### Fixed
+
+- **A refused stream ticket kept the widget asking for one every two seconds.** It never counted
+  as a failure, so the widget never fell back to polling. It now counts like a dropped stream:
+  after three the widget polls every ten seconds.
+- **The stream stayed open after the page was left.** It now closes on `pagehide`, and opens again
+  when the browser brings the page back from its back-forward cache.
 
 - **A logged-out browser kept receiving the previous user's pushes.** `reset()` rotated the
   anonymous id but never told the backend, so the subscription stayed bound to the contact who

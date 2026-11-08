@@ -1,43 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ChatState, ChatWidgetConfig } from '../src/chat-types';
+import type { ChatState } from '../src/chat-types';
+import {
+  BASE_URL,
+  CLIENT_KEY,
+  CONFIG,
+  WIDGET_PATH,
+  drained,
+  line,
+  useTimers,
+} from './chat-fixtures';
 
 type ChatModule = typeof import('../src/chat');
 type StoreModule = typeof import('../src/store');
 
 let chat: ChatModule;
 let store: StoreModule;
-
-const CLIENT_KEY = 'pub_test';
-const BASE_URL = 'https://api.example.test';
-const WIDGET_PATH = `/api/v1/orgs/${CLIENT_KEY}/chat`;
-
-const CONFIG: ChatWidgetConfig = {
-  name: 'Shop chat',
-  primaryColor: '#2563EB',
-  position: 'right',
-  language: 'auto',
-  askForEmail: 'never',
-  welcomeDelaySeconds: 0,
-  collect: { name: true, phone: false },
-  texts: {
-    en: {
-      welcome: 'Hi!',
-      placeholder: 'Write…',
-      outsideHours: 'Away.',
-      offlineForm: 'Leave your email.',
-      leadConsent: 'I agree.',
-    },
-    ar: {
-      welcome: 'أهلاً',
-      placeholder: 'اكتب…',
-      outsideHours: 'غير متواجدين.',
-      offlineForm: 'اترك بريدك.',
-      leadConsent: 'أوافق.',
-    },
-  },
-  poweredBy: true,
-  online: true,
-};
 
 interface Call {
   method: string;
@@ -106,30 +83,6 @@ beforeEach(async () => {
 });
 
 const OPTIONS = { zIndex: 10 };
-
-/** Lets the fake IndexedDB, which schedules its work on setImmediate, finish what a timer started. */
-async function drained(): Promise<void> {
-  for (let i = 0; i < 20; i += 1) {
-    await new Promise((resolve) => setImmediate(resolve));
-  }
-}
-
-/**
- * Only the clocks the widget uses: the fake IndexedDB schedules its own work
- * on setImmediate. The pacing reads the wall clock, so a test of it fakes
- * `Date` too.
- */
-function useTimers(withDate = false): void {
-  vi.useFakeTimers({
-    toFake: [
-      'setTimeout',
-      'clearTimeout',
-      'setInterval',
-      'clearInterval',
-      ...(withDate ? (['Date'] as const) : []),
-    ],
-  });
-}
 
 describe('start()', () => {
   it('draws nothing for an organization without a widget, and remembers that', async () => {
@@ -476,21 +429,3 @@ describe('resolveLocale()', () => {
     expect(chat.resolveLocale({ ...CONFIG, language: 'en' })).toBe('en');
   });
 });
-
-/** A line as the server sends it, dated earlier today so nothing paces it unless a test says so. */
-function line(
-  id: string,
-  direction: 'in' | 'out',
-  text: string,
-  kind = 'text',
-  sender: ChatState['messages'][number]['sender']['kind'] = direction === 'in' ? 'visitor' : 'system',
-): ChatState['messages'][number] {
-  return {
-    id,
-    direction,
-    at: `2026-11-04T00:00:0${id.length % 10}.000Z`,
-    kind,
-    text,
-    sender: { kind: sender, name: sender === 'agent' ? 'Lina' : null },
-  };
-}

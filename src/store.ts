@@ -155,6 +155,11 @@ export const KEYS = {
   inAppSession: 'inapp_session',
   /** `{ fetchedAtMs, config }` — the chat widget as last fetched; `config: null` means none. */
   chatConfig: 'chat_config',
+  /**
+   * Proactive message key → when this browser last showed it, in ms. Survives
+   * `reset()`: how often a message shows is about the browser, not the person.
+   */
+  chatProactive: 'chat_proactive',
 } as const;
 
 /**

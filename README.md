@@ -1,6 +1,6 @@
 # Arsel Web SDK
 
-Events, identity, web push, in-app messages and website chat for the browser. ~21 kB gzipped, no dependencies, ESM + UMD.
+Events, identity, web push, in-app messages and website chat for the browser. ~29 kB gzipped, no dependencies, ESM + UMD.
 
 ```js
 import Arsel from '@arsel.sa/web-sdk';

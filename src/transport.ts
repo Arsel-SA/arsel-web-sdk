@@ -93,14 +93,51 @@ export async function post<T = unknown>(
     });
   } catch {
     await record(path, CODE_NO_RESPONSE);
-    return {
-      result: RESULT.retryable,
-      code: CODE_NO_RESPONSE,
-      body: null,
-      retryAfterMs: null,
-    };
+    return noResponse();
   }
+  return settled<T>(path, response, authenticated);
+}
 
+/**
+ * A multipart upload. Not `keepalive`, which caps a body at 64 KiB, and no
+ * content type of its own: the browser sets it, with the form's boundary.
+ */
+export async function postForm<T = unknown>(
+  baseUrl: string,
+  path: string,
+  form: FormData,
+  headers: Record<string, string> = {},
+  authenticated = false,
+): Promise<Response<T>> {
+  let response: globalThis.Response;
+  try {
+    response = await fetch(baseUrl + path, {
+      method: 'POST',
+      headers: { ...SDK_HEADER, ...headers },
+      body: form,
+      credentials: 'omit',
+    });
+  } catch {
+    await record(path, CODE_NO_RESPONSE);
+    return noResponse();
+  }
+  return settled<T>(path, response, authenticated);
+}
+
+function noResponse<T>(): Response<T> {
+  return {
+    result: RESULT.retryable,
+    code: CODE_NO_RESPONSE,
+    body: null,
+    retryAfterMs: null,
+  };
+}
+
+async function settled<T>(
+  path: string,
+  response: globalThis.Response,
+  authenticated: boolean,
+): Promise<Response<T>> {
   await record(path, response.status);
   const result = classify(response.status, authenticated);
   let parsed: T | null = null;
@@ -133,26 +170,9 @@ export async function getJson<T>(
     });
   } catch {
     await record(path, CODE_NO_RESPONSE);
-    return {
-      result: RESULT.retryable,
-      code: CODE_NO_RESPONSE,
-      body: null,
-      retryAfterMs: null,
-    };
+    return noResponse();
   }
-
-  await record(path, response.status);
-  let parsed: T | null = null;
-  try {
-    parsed = (await response.json()) as T;
-  } catch {
-    // A 304 carries no body at all, and a non-JSON error page is not worth
-    // throwing over — the status is what the caller branches on.
-  }
-  return {
-    result: classify(response.status, authenticated),
-    code: response.status,
-    body: parsed,
-    retryAfterMs: readRetryAfter(response),
-  };
+  // A 304 carries no body at all, and a non-JSON error page is not worth
+  // throwing over — the status is what the caller branches on.
+  return settled<T>(path, response, authenticated);
 }

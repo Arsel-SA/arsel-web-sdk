@@ -27,6 +27,19 @@ export interface ChatStrings {
   typing: string;
   invalidEmail: string;
   invalidPhone: string;
+  attach: string;
+  fileTooLarge: string;
+  fileType: string;
+  fileFailed: string;
+  uploading: string;
+  /** Under the visitor's last line a teammate has read. */
+  seen: string;
+  /** The five scores' labels, worst first. */
+  rateScores: readonly string[];
+  ratingComment: string;
+  /** `{score}` is the visitor's own score. */
+  ratingYours: string;
+  dismiss: string;
 }
 
 export const CHAT_STRINGS: Readonly<Record<ChatLocale, ChatStrings>> = Object.freeze({
@@ -51,6 +64,16 @@ export const CHAT_STRINGS: Readonly<Record<ChatLocale, ChatStrings>> = Object.fr
     typing: 'Typing…',
     invalidEmail: 'Enter a valid email address.',
     invalidPhone: 'Enter a phone number with the country code, e.g. +966501234567.',
+    attach: 'Attach an image or a PDF',
+    fileTooLarge: 'Files can be up to 10 MB.',
+    fileType: 'Send an image (JPEG, PNG, WebP or GIF) or a PDF.',
+    fileFailed: 'The file was not sent.',
+    uploading: 'Uploading…',
+    seen: 'Seen',
+    rateScores: Object.freeze(['Very bad', 'Bad', 'Okay', 'Good', 'Very good']),
+    ratingComment: 'Anything to add? (optional)',
+    ratingYours: 'You rated it {score} of 5',
+    dismiss: 'Dismiss',
   }),
   ar: Object.freeze({
     open: 'افتح المحادثة',
@@ -73,5 +96,15 @@ export const CHAT_STRINGS: Readonly<Record<ChatLocale, ChatStrings>> = Object.fr
     typing: 'يكتب…',
     invalidEmail: 'أدخل بريداً إلكترونياً صحيحاً.',
     invalidPhone: 'أدخل رقم الجوال مع رمز الدولة، مثل +966501234567.',
+    attach: 'أرفق صورة أو ملف PDF',
+    fileTooLarge: 'حجم الملف حتى 10 ميغابايت.',
+    fileType: 'أرسل صورة (JPEG أو PNG أو WebP أو GIF) أو ملف PDF.',
+    fileFailed: 'لم يُرسل الملف.',
+    uploading: 'جارٍ الرفع…',
+    seen: 'تمت القراءة',
+    rateScores: Object.freeze(['سيئ جداً', 'سيئ', 'مقبول', 'جيد', 'ممتاز']),
+    ratingComment: 'هل تود إضافة شيء؟ (اختياري)',
+    ratingYours: 'قيّمتها {score} من 5',
+    dismiss: 'إغلاق',
   }),
 });

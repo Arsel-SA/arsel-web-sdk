@@ -24,6 +24,8 @@ const CONFIG: ChatWidgetConfig = {
       outsideHours: 'We are away.',
       offlineForm: 'Leave your email.',
       leadConsent: 'I agree to updates.',
+      ratingPrompt: 'How did we do?',
+      ratingThanks: 'Thanks!',
     },
     ar: {
       welcome: 'أهلاً! كيف نساعدك؟',
@@ -31,6 +33,8 @@ const CONFIG: ChatWidgetConfig = {
       outsideHours: 'نحن غير متواجدين.',
       offlineForm: 'اترك بريدك.',
       leadConsent: 'أوافق على التحديثات.',
+      ratingPrompt: 'كيف كانت؟',
+      ratingThanks: 'شكراً!',
     },
   },
   poweredBy: true,
@@ -78,6 +82,11 @@ let open: ReturnType<typeof vi.fn>;
 let send: ReturnType<typeof vi.fn>;
 let submitLead: ReturnType<typeof vi.fn>;
 let skipForm: ReturnType<typeof vi.fn>;
+let rate: ReturnType<typeof vi.fn>;
+let sendFile: ReturnType<typeof vi.fn>;
+let noteTyping: ReturnType<typeof vi.fn>;
+let dismissProactive: ReturnType<typeof vi.fn>;
+let retry: ReturnType<typeof vi.fn>;
 let current: ChatState;
 let listener: ((s: ChatState) => void) | null;
 let handle: ReturnType<ViewModule['mountChat']> | null = null;
@@ -93,10 +102,23 @@ beforeEach(async () => {
   send = vi.fn(async () => true);
   submitLead = vi.fn(async () => true);
   skipForm = vi.fn(async () => true);
+  rate = vi.fn(async () => true);
+  sendFile = vi.fn(async () => null);
+  noteTyping = vi.fn();
+  dismissProactive = vi.fn(() => {
+    current = { ...current, proactive: null };
+    listener?.(current);
+  });
+  retry = vi.fn(async () => true);
   vi.doMock('../src/chat', async () => {
     const actual = await vi.importActual<ChatModule>('../src/chat');
     return {
       ...actual,
+      rate,
+      sendFile,
+      noteTyping,
+      dismissProactive,
+      retry,
       open,
       close: () => {
         current = { ...current, isOpen: false };
@@ -461,5 +483,147 @@ describe('mountChat', () => {
 
   it('exposes the chat module it drives', () => {
     expect(typeof chat.resolveLocale).toBe('function');
+  });
+});
+
+describe('mountChat, the inbox', () => {
+  const opened = (change: Partial<ChatState> = {}) =>
+    mount(state({ isOpen: true, conversation: { id: 'conv-1', status: 'open', agent: null }, ...change }));
+
+  it('asks for a rating with five labelled faces, then a comment, and sends both', async () => {
+    const root = opened({
+      messages: [message('r1', 'out', 'How did we do?', { kind: 'rating', sender: { kind: 'system', name: null } })],
+    });
+
+    const faces = [...root.querySelectorAll<HTMLButtonElement>('.score')];
+    expect(faces.map((face) => face.getAttribute('aria-label'))).toEqual([
+      'Very bad',
+      'Bad',
+      'Okay',
+      'Good',
+      'Very good',
+    ]);
+    faces[3]?.click();
+    const comment = root.querySelector<HTMLTextAreaElement>('.rating-comment');
+    expect(comment).not.toBeNull();
+    if (comment) {
+      comment.value = 'Quick';
+      comment.dispatchEvent(new Event('input'));
+    }
+    root.querySelector<HTMLButtonElement>('.rating-send')?.click();
+
+    expect(rate).toHaveBeenCalledWith('r1', 4, 'Quick');
+  });
+
+  it('shows the visitor their own rating and the thanks once rated', () => {
+    const root = opened({
+      messages: [
+        message('r1', 'out', 'How did we do?', {
+          kind: 'rating',
+          sender: { kind: 'system', name: null },
+          payload: { rating: { score: 5, comment: null } },
+        }),
+      ],
+    });
+
+    expect(root.querySelector('.scores')).toBeNull();
+    expect(root.querySelector('.rating-done')?.textContent).toBe('You rated it 5 of 5. Thanks!');
+  });
+
+  it('draws an image in place, a PDF as a link, and a file still uploading by its name', () => {
+    const root = opened({
+      messages: [
+        message('f1', 'in', '', {
+          kind: 'file',
+          attachments: [
+            { id: 'a1', name: 'shoe.png', contentType: 'image/png', size: 2048, url: 'https://files.test/a1' },
+            { id: 'a2', name: 'invoice.pdf', contentType: 'application/pdf', size: 3 * 1024 * 1024, url: 'https://files.test/a2' },
+            { id: 'a3', name: 'later.pdf', contentType: 'application/pdf', size: 10, url: null },
+          ],
+        }),
+      ],
+    });
+
+    expect(root.querySelector<HTMLImageElement>('.image img')?.alt).toBe('shoe.png');
+    const pdf = root.querySelector<HTMLAnchorElement>('a.file');
+    expect(pdf?.textContent).toBe('invoice.pdf · 3.0 MB');
+    expect(pdf?.rel).toBe('noopener noreferrer');
+    expect(root.querySelector('.file.pending')?.textContent).toBe('later.pdf · Uploading…');
+  });
+
+  it('marks the visitor’s newest line a teammate read as seen', () => {
+    const root = opened({
+      conversation: { id: 'conv-1', status: 'open', agent: null, agentReadAt: '2026-11-04T09:00:05.000Z' },
+      messages: [
+        message('v1', 'in', 'First'),
+        message('v22', 'in', 'Second'),
+        message('v333333', 'in', 'Third, unread'),
+      ],
+    });
+
+    const seen = root.querySelectorAll('.seen');
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.previousElementSibling?.textContent).toContain('Second');
+  });
+
+  it('shows a teammate writing as dots under their first name', () => {
+    const root = opened({ agentTyping: { name: 'Lina', until: Date.now() + 5_000 } });
+
+    const typing = root.querySelector('.typing');
+    expect(typing?.querySelector('.who')?.textContent).toBe('Lina');
+  });
+
+  it('offers the paperclip only where the widget takes files, and says why a file did not go', async () => {
+    const root = opened();
+    expect(root.querySelector<HTMLButtonElement>('.attach')?.hidden).toBe(true);
+    handle?.destroy();
+
+    sendFile.mockResolvedValueOnce('too_large');
+    const withFiles = opened({ config: { ...CONFIG, allowAttachments: true } });
+    expect(withFiles.querySelector<HTMLButtonElement>('.attach')?.hidden).toBe(false);
+    const input = withFiles.querySelector<HTMLInputElement>('.file-input');
+    const big = new File([new Uint8Array(8)], 'big.png', { type: 'image/png' });
+    if (input) {
+      Object.defineProperty(input, 'files', { value: [big], configurable: true });
+      input.dispatchEvent(new Event('change'));
+    }
+    await settled();
+
+    expect(sendFile).toHaveBeenCalledWith(big);
+    expect(withFiles.querySelector('.composer-error')?.textContent).toBe('Files can be up to 10 MB.');
+  });
+
+  it('tells the engine the visitor is typing', () => {
+    const root = opened();
+    const input = root.querySelector<HTMLTextAreaElement>('textarea.input');
+    if (input) {
+      input.value = 'Hel';
+      input.dispatchEvent(new Event('input'));
+    }
+
+    expect(noteTyping).toHaveBeenCalled();
+  });
+
+  it('shows a proactive message above the launcher, opens on it, and lets the visitor dismiss it', async () => {
+    const root = mount(state({ proactive: { key: 'help', text: 'Need a hand?', display: 'teaser' } }));
+
+    const teaser = root.querySelector<HTMLDivElement>('.teaser');
+    expect(teaser?.hidden).toBe(false);
+    expect(root.querySelector('.teaser-text')?.textContent).toBe('Need a hand?');
+
+    root.querySelector<HTMLButtonElement>('.teaser-close')?.click();
+
+    expect(dismissProactive).toHaveBeenCalled();
+    expect(teaser?.hidden).toBe(true);
+  });
+
+  it('retries a failed line through the engine, by its id', () => {
+    const root = opened({
+      messages: [message('p1', 'in', 'Hello', { pending: 'failed', clientMessageId: 'cm-1' })],
+    });
+
+    root.querySelector<HTMLButtonElement>('.retry')?.click();
+
+    expect(retry).toHaveBeenCalledWith('cm-1');
   });
 });

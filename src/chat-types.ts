@@ -15,12 +15,37 @@ export interface ChatTexts {
   outsideHours: string;
   offlineForm: string;
   leadConsent: string;
+  /** Asked once a teammate resolved the conversation. */
+  ratingPrompt: string;
+  /** Shown once the visitor rated. */
+  ratingThanks: string;
 }
 
 /** A button under the welcome bubble: tapping it sends its label and starts the scenario its key names. */
 export interface ChatWelcomeOption {
   key: string;
   label: Record<ChatLocale, string>;
+}
+
+export type ChatProactiveTrigger = 'time_on_page' | 'exit_intent';
+export type ChatProactiveWhen = 'always' | 'online' | 'offline';
+export type ChatProactiveDisplay = 'teaser' | 'open';
+
+/**
+ * A message the widget shows before the visitor writes, judged here in the
+ * browser: after some seconds on the page, or as the pointer leaves it.
+ */
+export interface ChatProactiveMessage {
+  key: string;
+  trigger: ChatProactiveTrigger;
+  seconds: number;
+  /** Only on pages whose address contains this; null on every page. */
+  urlContains: string | null;
+  when: ChatProactiveWhen;
+  display: ChatProactiveDisplay;
+  /** How often one browser may see it. */
+  everyDays: number;
+  text: Record<ChatLocale, string>;
 }
 
 /** What the server says the widget looks and behaves like. */
@@ -36,6 +61,9 @@ export interface ChatWidgetConfig {
   /** How the scenarios' lines are labelled; unset shows the widget's own word. */
   botName?: string | null;
   welcomeOptions?: ChatWelcomeOption[];
+  /** The visitor may send images and PDFs. Absent from a config cached before files came. */
+  allowAttachments?: boolean;
+  proactive?: ChatProactiveMessage[];
   poweredBy: boolean;
   online: boolean;
 }
@@ -65,7 +93,7 @@ export interface ChatFormRequest {
 /**
  * What a line carries beyond its text: a bot's quick replies, links or form
  * request; on the visitor's own line, the quick reply they tapped and the
- * line it answers.
+ * line it answers; on a rating request, the visitor's answer.
  */
 export interface ChatMessagePayload {
   options?: ChatChoiceOption[];
@@ -73,17 +101,29 @@ export interface ChatMessagePayload {
   form?: ChatFormRequest;
   option?: string;
   replyTo?: string;
+  rating?: { score: number | null; comment: string | null };
+}
+
+/** A file sent in the thread, either way. */
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  contentType: string;
+  size: number;
+  /** A signed link that lasts an hour; null while uploading, or once out of reach. */
+  url: string | null;
 }
 
 export interface ChatMessage {
   id: string;
   direction: 'in' | 'out';
   at: string;
-  /** `text`, `notice`, `choices` or `form`. */
+  /** `text`, `notice`, `choices`, `form`, `rating` or `file`. */
   kind: string;
   text: string | null;
   sender: { kind: ChatSenderKind; name: string | null };
   payload?: ChatMessagePayload | null;
+  attachments?: ChatAttachment[];
   /** Set on the visitor's own lines until the server has them. */
   pending?: 'sending' | 'failed';
   clientMessageId?: string;
@@ -95,6 +135,15 @@ export interface ChatConversation {
   id: string;
   status: 'open' | 'resolved';
   agent: { name: string | null } | null;
+  /** A teammate last opened the thread: the visitor's lines up to here were seen. */
+  agentReadAt?: string | null;
+}
+
+/** A proactive message on show: its words, and whether it opened the window or sits above the launcher. */
+export interface ChatProactiveShown {
+  key: string;
+  text: string;
+  display: ChatProactiveDisplay;
 }
 
 export interface ChatState {
@@ -109,6 +158,9 @@ export interface ChatState {
   identified: boolean;
   /** The organization has no conversation allowance left: the form takes the lead instead. */
   overQuota: boolean;
+  /** A teammate is writing, by first name, until the time given (ms since the epoch). */
+  agentTyping?: { name: string | null; until: number } | null;
+  proactive?: ChatProactiveShown | null;
 }
 
 export interface ChatLead {
@@ -126,4 +178,6 @@ export interface SendExtra {
   replyTo?: string;
   /** A retry of a failed line, by its id, so the server takes it once. */
   retryOf?: string;
+  /** A file uploaded first, sent with the line. */
+  attachmentId?: string;
 }
