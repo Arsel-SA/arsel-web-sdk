@@ -60,6 +60,10 @@ Breaking changes to the public surface wait for a major release, and are listed 
   after three the widget polls every ten seconds.
 - **The stream stayed open after the page was left.** It now closes on `pagehide`, and opens again
   when the browser brings the page back from its back-forward cache.
+- **A light widget colour made the widget hard to read.** The header, the visitor's lines and the
+  buttons always wrote white on the organization's colour, so a lime or yellow left them nearly
+  blank. They now take the widget's near-black when it reads better, and links, quick replies,
+  file links and focus rings use the colour darkened until it reaches 4.5:1 on white (WCAG AA).
 
 ## [1.3.1] — 2026-11-04
 

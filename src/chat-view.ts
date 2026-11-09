@@ -1,5 +1,6 @@
 import * as chat from './chat';
 import type { ChatFormRequest, ChatLead, ChatState, ChatWidgetConfig } from './chat-types';
+import { inkOf, textOn } from './chat-colours';
 import { CHAT_STRINGS, type ChatStrings } from './chat-strings';
 import { applyChatStyles } from './chat-styles';
 import { MESSAGE_MAX_LENGTH, buildElements, type Elements } from './chat-view-dom';
@@ -66,6 +67,8 @@ export function mountChat(initial: ChatState, zIndex: number): ChatViewHandle {
   host.setAttribute('dir', locale === 'ar' ? 'rtl' : readDirection());
   host.setAttribute('data-position', config.position);
   host.style.setProperty('--arsel-chat-primary', config.primaryColor);
+  host.style.setProperty('--arsel-chat-on-primary', textOn(config.primaryColor));
+  host.style.setProperty('--arsel-chat-ink', inkOf(config.primaryColor));
 
   const elements = buildElements(root, config, strings, texts);
   const memory: ViewMemory = {

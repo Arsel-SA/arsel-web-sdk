@@ -169,6 +169,21 @@ describe('mountChat', () => {
     expect(document.body.contains(root.host)).toBe(true);
   });
 
+  it('gives a light colour dark text, and a darker shade of it where it is text on white', () => {
+    const light = mount(state({ config: { ...CONFIG, primaryColor: '#84CC16' } }));
+
+    expect(light.host.style.getPropertyValue('--arsel-chat-primary')).toBe('#84CC16');
+    expect(light.host.style.getPropertyValue('--arsel-chat-on-primary')).toBe('#0f172a');
+    expect(light.host.style.getPropertyValue('--arsel-chat-ink')).toBe('#4f7a0d');
+  });
+
+  it('keeps white text on a colour dark enough for it', () => {
+    const root = mount();
+
+    expect(root.host.style.getPropertyValue('--arsel-chat-on-primary')).toBe('#ffffff');
+    expect(root.host.style.getPropertyValue('--arsel-chat-ink')).toBe('#2563EB');
+  });
+
   it('opens a dialog with the welcome line when the launcher is clicked', async () => {
     const root = mount();
 
