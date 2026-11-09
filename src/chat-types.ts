@@ -110,8 +110,10 @@ export interface ChatAttachment {
   name: string;
   contentType: string;
   size: number;
-  /** A signed link that lasts an hour; null while uploading, or once out of reach. */
+  /** A signed link that lasts an hour; null while uploading, being checked, or once out of reach. */
   url: string | null;
+  /** What the malware scanner says of it, when there is something to say. */
+  scan?: 'pending' | 'infected' | 'unscannable';
 }
 
 export interface ChatMessage {

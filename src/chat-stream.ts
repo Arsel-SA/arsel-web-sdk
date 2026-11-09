@@ -1,7 +1,7 @@
 import { chatPath, deviceHeaders, readDevice } from './chat-device';
 import { paced } from './chat-pacing';
 import { current, isLocal, isRunning, log, mergeLines, publish } from './chat-state';
-import type { ChatConversation, ChatMessage } from './chat-types';
+import type { ChatAttachment, ChatConversation, ChatMessage } from './chat-types';
 import { RESULT, getJson, post } from './transport';
 
 /**
@@ -28,6 +28,11 @@ const AGENT_TYPING_SHOWN_MS = 6 * MS_PER_SECOND;
 interface StreamFrame {
   event: string;
   data: unknown;
+}
+
+interface AttachmentUpdate {
+  messageId: string | null;
+  attachment: ChatAttachment;
 }
 
 let stream: EventSource | null = null;
@@ -105,6 +110,9 @@ export function handleFrame(frame: StreamFrame): void {
     case 'message_updated':
       receive(frame.data as ChatMessage, true);
       return;
+    case 'attachment_updated':
+      attachmentUpdated(frame.data as AttachmentUpdate);
+      return;
     case 'conversation':
       publish({ conversation: frame.data as ChatConversation });
       return;
@@ -141,6 +149,24 @@ export function receive(message: ChatMessage, update = false): void {
     unread: state.unread + (fromTeam && !known && !state.isOpen ? 1 : 0),
     agentTyping: typing ?? null,
   });
+}
+
+/**
+ * A file of the thread changed: the malware scanner cleared it, or removed
+ * it as harmful. The line holding it gets the file as it stands now.
+ */
+function attachmentUpdated(update: AttachmentUpdate): void {
+  const { attachment } = update;
+  if (!attachment?.id) return;
+  const messages = current().messages.map((line) =>
+    line.attachments?.some((file) => file.id === attachment.id)
+      ? {
+          ...line,
+          attachments: line.attachments.map((file) => (file.id === attachment.id ? attachment : file)),
+        }
+      : line,
+  );
+  publish({ messages });
 }
 
 function agentTyping(agent: { name: string | null } | null): void {

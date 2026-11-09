@@ -64,7 +64,10 @@ an `Idempotency-Key` (a random UUID per event, minted locally) so retries are no
 
 ### With the website chat
 
-Only once the visitor writes, rates or sends a file, and only to their own conversation.
+Only once the visitor writes, rates or sends a file, and only to their own conversation. The one
+exception carries nothing about the visitor: when a proactive message shows, or its teaser is
+opened, the widget sends the message's key and which of the two happened (with the browser's
+installation id when it has one, only for rate limiting).
 
 | Field | |
 | --- | --- |

@@ -32,6 +32,10 @@ export interface ChatStrings {
   fileType: string;
   fileFailed: string;
   uploading: string;
+  /** A file the malware scanner is still checking. */
+  fileChecking: string;
+  /** A file the malware scanner found harmful. */
+  fileRemoved: string;
   /** Under the visitor's last line a teammate has read. */
   seen: string;
   /** The five scores' labels, worst first. */
@@ -69,6 +73,8 @@ export const CHAT_STRINGS: Readonly<Record<ChatLocale, ChatStrings>> = Object.fr
     fileType: 'Send an image (JPEG, PNG, WebP or GIF) or a PDF.',
     fileFailed: 'The file was not sent.',
     uploading: 'Uploading…',
+    fileChecking: 'Checking the file…',
+    fileRemoved: 'Removed: it may be harmful',
     seen: 'Seen',
     rateScores: Object.freeze(['Very bad', 'Bad', 'Okay', 'Good', 'Very good']),
     ratingComment: 'Anything to add? (optional)',
@@ -101,6 +107,8 @@ export const CHAT_STRINGS: Readonly<Record<ChatLocale, ChatStrings>> = Object.fr
     fileType: 'أرسل صورة (JPEG أو PNG أو WebP أو GIF) أو ملف PDF.',
     fileFailed: 'لم يُرسل الملف.',
     uploading: 'جارٍ الرفع…',
+    fileChecking: 'جارٍ فحص الملف…',
+    fileRemoved: 'حُذف لأنه قد يكون ضاراً',
     seen: 'تمت القراءة',
     rateScores: Object.freeze(['سيئ جداً', 'سيئ', 'مقبول', 'جيد', 'ممتاز']),
     ratingComment: 'هل تود إضافة شيء؟ (اختياري)',

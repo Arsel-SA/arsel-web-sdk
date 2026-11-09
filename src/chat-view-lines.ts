@@ -236,7 +236,14 @@ function filesOf(attachments: ChatAttachment[], strings: ChatStrings): HTMLDivEl
     if (!file.url || !isHttpUrl(file.url)) {
       const pending = document.createElement('span');
       pending.className = 'file pending';
-      pending.textContent = `${file.name} · ${strings.uploading}`;
+      // Held back while the malware scanner checks it, or withdrawn as harmful.
+      const state =
+        file.scan === 'infected'
+          ? strings.fileRemoved
+          : file.scan === 'pending'
+            ? strings.fileChecking
+            : strings.uploading;
+      pending.textContent = `${file.name} · ${state}`;
       wrap.append(pending);
       continue;
     }

@@ -161,6 +161,34 @@ describe('the stream', () => {
     chat.stop();
   });
 
+  it('shows a file the malware scanner cleared, or removed, in the line that holds it', async () => {
+    respond = chattingServer();
+    await chat.start(OPTIONS, false);
+    const checking = { id: 'f1', name: 'photo.jpg', contentType: 'image/jpeg', size: 10, url: null, scan: 'pending' };
+    stream.handleFrame({
+      event: 'message',
+      data: { ...line('v1', 'in', '', 'file'), attachments: [checking] },
+    });
+
+    stream.handleFrame({
+      event: 'attachment_updated',
+      data: { messageId: 'v1', attachment: { ...checking, url: 'https://files.test/f1', scan: undefined } },
+    });
+    expect(chat.snapshot().messages.find((m) => m.id === 'v1')?.attachments).toEqual([
+      { ...checking, url: 'https://files.test/f1', scan: undefined },
+    ]);
+
+    stream.handleFrame({
+      event: 'attachment_updated',
+      data: { messageId: 'v1', attachment: { ...checking, scan: 'infected' } },
+    });
+    expect(chat.snapshot().messages.find((m) => m.id === 'v1')?.attachments?.[0]).toMatchObject({
+      url: null,
+      scan: 'infected',
+    });
+    chat.stop();
+  });
+
   it('polls after three refused stream tickets, instead of asking for a ticket every two seconds', async () => {
     vi.stubGlobal(
       'EventSource',
@@ -387,6 +415,54 @@ describe('proactive messages', () => {
     await drained();
     expect(fresh.snapshot().proactive ?? null).toBeNull();
     fresh.stop();
+  });
+
+  it('tells the server the message showed, and that the visitor opened its teaser, once each', async () => {
+    useTimers();
+    respond = proactiveServer([HELP]);
+    await chat.start(OPTIONS, false);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await drained();
+
+    await chat.open();
+    chat.close();
+    await chat.open();
+    await drained();
+
+    expect(posted('proactive').map((c) => c.body)).toEqual([
+      { key: 'help', event: 'shown', installationId: 'inst-1' },
+      { key: 'help', event: 'opened', installationId: 'inst-1' },
+    ]);
+    // Asked of a visitor who may never have written: no device proof goes with it.
+    expect(posted('proactive')[0]?.headers).not.toHaveProperty('X-Arsel-Device-Auth');
+    chat.stop();
+  });
+
+  it('counts a message that opens the window itself as shown, never as opened', async () => {
+    useTimers();
+    respond = proactiveServer([{ ...HELP, display: 'open' }]);
+    await chat.start(OPTIONS, false);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await drained();
+
+    expect(chat.snapshot().isOpen).toBe(true);
+    expect(posted('proactive').map((c) => (c.body as { event: string }).event)).toEqual(['shown']);
+    chat.stop();
+  });
+
+  it('fires no teaser once the visitor had the window open on the page: it would never be drawn', async () => {
+    useTimers();
+    respond = proactiveServer([HELP]);
+    await chat.start(OPTIONS, false);
+    await chat.open();
+    chat.close();
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    await drained();
+
+    expect(chat.snapshot().proactive ?? null).toBeNull();
+    expect(posted('proactive')).toEqual([]);
+    chat.stop();
   });
 
   it('sends no key once the visitor dismissed the message', async () => {

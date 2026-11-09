@@ -551,6 +551,25 @@ describe('mountChat, the inbox', () => {
     expect(root.querySelector('.file.pending')?.textContent).toBe('later.pdf · Uploading…');
   });
 
+  it('names a file the malware scanner is still checking, and one it removed', () => {
+    const root = opened({
+      messages: [
+        message('f2', 'in', '', {
+          kind: 'file',
+          attachments: [
+            { id: 'b1', name: 'photo.jpg', contentType: 'image/jpeg', size: 10, url: null, scan: 'pending' },
+            { id: 'b2', name: 'setup.pdf', contentType: 'application/pdf', size: 10, url: null, scan: 'infected' },
+          ],
+        }),
+      ],
+    });
+
+    expect([...root.querySelectorAll('.file.pending')].map((chip) => chip.textContent)).toEqual([
+      'photo.jpg · Checking the file…',
+      'setup.pdf · Removed: it may be harmful',
+    ]);
+  });
+
   it('marks the visitor’s newest line a teammate read as seen', () => {
     const root = opened({
       conversation: { id: 'conv-1', status: 'open', agent: null, agentReadAt: '2026-11-04T09:00:05.000Z' },

@@ -52,7 +52,9 @@ await Arsel.init({
 - **Files.** Where Chat → Widget lets visitors send files, a paperclip beside the composer sends
   an image (JPEG, PNG, WebP, GIF) or a PDF, up to 10 MB. Images show in the thread; a PDF shows as
   a link that saves it. Teammates can send files the same way. Links to files last an hour; an
-  image whose link ran out asks for a fresh one.
+  image whose link ran out asks for a fresh one. Where the organization scans files for malware,
+  a visitor's file shows "Checking the file…" until it is cleared, and one found harmful shows as
+  removed.
 - **Rating.** When a teammate resolves a conversation they answered, the thread asks the visitor
   to rate it, from 1 to 5, with an optional comment. Switched off under Chat → Widget.
 - **Proactive messages.** Messages set under Chat → Widget that show before the visitor writes:
@@ -62,8 +64,10 @@ await Arsel.init({
   dismiss, or opens the window on it. One shows per page view at most, never while the visitor is
   chatting, and the same one no more than once a day, a week or a month on a browser, as set.
   When the visitor answers, the message is the conversation's first line in the team's inbox.
-  All of this is decided in the browser from the cached config: proactive messages cost no
-  request.
+  All of this is decided in the browser from the cached config. The widget then tells the server
+  that a message showed, and that the visitor opened its teaser, for the figures beside each
+  message on the Widget page: one small request each time, never per page view. A teaser does not
+  fire on a page where the visitor already had the window open, since it would not be drawn.
 
 ## Scenarios
 
@@ -131,6 +135,7 @@ All under your `baseUrl`, beside the push and events calls in the
 | `POST /api/v1/orgs/{clientKey}/chat/attachments?installationId=…` | `X-Arsel-Device-Auth` (multipart upload) |
 | `GET /api/v1/orgs/{clientKey}/chat/attachment?installationId=…&id=…` | `X-Arsel-Device-Auth` (a fresh file link) |
 | `POST /api/v1/orgs/{clientKey}/chat/ratings` | `X-Arsel-Device-Auth` |
+| `POST /api/v1/orgs/{clientKey}/chat/proactive` | none: the origin is checked (a proactive message showed, or its teaser was opened) |
 
 Replies arrive over a server-sent events stream. Where `EventSource` is unavailable, or the stream
 keeps failing, the widget polls for new lines every ten seconds instead, and every second and a

@@ -10,6 +10,7 @@ import {
 import { freshLink, refusalOf, upload, type FileRefusal } from './chat-files';
 import { paced, stopPacing } from './chat-pacing';
 import { startProactive, stopProactive } from './chat-proactive';
+import { reportProactive } from './chat-reports';
 import { stopReads, watchReads } from './chat-signals';
 import {
   current,
@@ -165,6 +166,10 @@ export async function open(): Promise<void> {
     unread: 0,
     ...(opener ? { messages: mergeLines(state.messages, [opener]) } : {}),
   });
+  // The visitor opened the window on a teaser; one that opened it itself counts as shown only.
+  if (opener && state.proactive?.display === 'teaser') {
+    reportProactive(state.proactive.key, 'opened');
+  }
   if (!current().conversation && (await get<string>(KEYS.deviceSecret))) {
     await refreshSession();
     if (current().conversation) connectStream();
@@ -214,6 +219,7 @@ function showProactive(message: ChatProactiveMessage): void {
       display: message.display,
     },
   });
+  reportProactive(message.key, 'shown');
   if (message.display === 'open') void open();
 }
 

@@ -42,6 +42,16 @@ Breaking changes to the public surface wait for a major release, and are listed 
   visitor can dismiss or the window opened on it, at most once a day, week or month per browser,
   all judged in the browser from the cached config; the visitor's answer makes it the
   conversation's first line for the team.
+- **Proactive message figures, and file checks in the widget.** The widget reports when a
+  proactive message shows and when a visitor opens its teaser (`POST …/chat/proactive`,
+  checked by origin like the config, with the browser's installation id when it has one), so
+  the Widget page can show how each message did; the server counts the replies itself. Reports
+  are fire and forget: an API without the route drops them and the widget carries on. A teaser
+  no longer fires on a page where the visitor already opened the window, so a show is only
+  counted when someone could see it. Where the organization scans files for malware, a file
+  shows "Checking the file…" until it is cleared and "Removed: it may be harmful" if it is not,
+  in English and Arabic, and the thread swaps it in place when the verdict arrives
+  (`attachment_updated` on the stream).
 
 ### Fixed
 

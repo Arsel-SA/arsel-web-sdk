@@ -311,6 +311,7 @@ Every request carries an `X-Arsel-SDK: web/<version>` header.
 | `GET /api/v1/orgs/{clientKey}/chat/config` | page | none (public config) |
 | `POST /api/v1/orgs/{clientKey}/chat/sessions`, `…/chat/messages`, `…/chat/stream-ticket`, `…/chat/leads`; `GET …/chat/messages` | page | `X-Arsel-Device-Auth: <deviceSecret>` |
 | `GET /api/v1/orgs/{clientKey}/chat/stream` | page | single-use ticket in the query (server-sent events) |
+| `POST /api/v1/orgs/{clientKey}/chat/proactive` | page | none (origin checked; a proactive message showed or its teaser was opened) |
 
 Event delivery batches up to 50 queued events per request (`{ "events": [...] }`; a single event is
 sent as a bare object) and stamps each request with an `Idempotency-Key` derived from the persisted

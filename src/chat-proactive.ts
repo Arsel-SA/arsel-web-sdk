@@ -1,4 +1,4 @@
-import { current } from './chat-state';
+import { current, subscribe } from './chat-state';
 import type { ChatProactiveMessage, ChatWidgetConfig } from './chat-types';
 import { KEYS, get, set } from './store';
 
@@ -22,6 +22,9 @@ let timers: ReturnType<typeof setTimeout>[] = [];
 let addressTimer: ReturnType<typeof setInterval> | null = null;
 let exitListener: ((event: MouseEvent) => void) | null = null;
 let fired = false;
+/** The view draws no teaser once the window has been open on the page, so none fires. */
+let windowWasOpen = false;
+let unwatchWindow: (() => void) | null = null;
 
 export function startProactive(config: ChatWidgetConfig, show: Show): void {
   stopProactive();
@@ -30,6 +33,10 @@ export function startProactive(config: ChatWidgetConfig, show: Show): void {
     return;
   }
   fired = false;
+  windowWasOpen = current().isOpen;
+  unwatchWindow = subscribe((state) => {
+    if (state.isOpen) windowWasOpen = true;
+  });
   arm(rules, show);
   let address = location.href;
   addressTimer = setInterval(() => {
@@ -44,6 +51,8 @@ export function stopProactive(): void {
   disarm();
   if (addressTimer) clearInterval(addressTimer);
   addressTimer = null;
+  unwatchWindow?.();
+  unwatchWindow = null;
 }
 
 /** The current page's watches: a timer per time-on-page message, and the pointer for exit intent. */
@@ -84,6 +93,8 @@ async function attempt(rule: ChatProactiveMessage, show: Show): Promise<void> {
 function applies(rule: ChatProactiveMessage): boolean {
   const state = current();
   if (state.isOpen || state.proactive) return false;
+  // Remembered as shown, a teaser nobody saw would wait days to show again.
+  if (rule.display === 'teaser' && windowWasOpen) return false;
   const chatting =
     state.conversation?.status === 'open' &&
     state.messages.some((message) => message.direction === 'in');
