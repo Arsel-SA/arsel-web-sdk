@@ -43,11 +43,6 @@ Breaking changes to the public surface wait for a major release, and are listed 
   all judged in the browser from the cached config; the visitor's answer makes it the
   conversation's first line for the team.
 
-## [1.3.1] — 2026-11-04
-
-If you copied `arsel-sw.js` into your web root, copy it again: updating the package does not
-refresh a copied file.
-
 ### Fixed
 
 - **A refused stream ticket kept the widget asking for one every two seconds.** It never counted
@@ -55,6 +50,13 @@ refresh a copied file.
   after three the widget polls every ten seconds.
 - **The stream stayed open after the page was left.** It now closes on `pagehide`, and opens again
   when the browser brings the page back from its back-forward cache.
+
+## [1.3.1] — 2026-11-04
+
+If you copied `arsel-sw.js` into your web root, copy it again: updating the package does not
+refresh a copied file.
+
+### Fixed
 
 - **A logged-out browser kept receiving the previous user's pushes.** `reset()` rotated the
   anonymous id but never told the backend, so the subscription stayed bound to the contact who
